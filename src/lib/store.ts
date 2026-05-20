@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import type { Link, LinkVariant, ModuleKind } from '../modules/types'
+import type { Link, LinkVariant, ModuleKind, ModuleRole } from '../modules/types'
 import { MODULES } from '../modules/registry'
 
 export type DrawingMeta = {
@@ -97,6 +97,9 @@ export function canInsertAt(
   if (index < 0 || index > links.length) {
     return { ok: false, reason: 'Invalid position' }
   }
+  if (def.chainPlaceable === false || def.role === 'accessory') {
+    return { ok: false, reason: 'Configured from the properties panel' }
+  }
   // Build hypothetical chain
   const hypothetical: Link[] = [
     ...links.slice(0, index),
@@ -108,7 +111,7 @@ export function canInsertAt(
 
 export function validateChain(
   links: Link[],
-  focus?: 'feed' | 'middle' | 'angle' | 'drive',
+  focus?: ModuleRole,
 ): { ok: boolean; reason?: string } {
   if (links.length === 0) return { ok: true }
 

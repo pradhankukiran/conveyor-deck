@@ -125,6 +125,11 @@ function ModuleThumb({ kind }: { kind: ModuleKind }) {
         {def.visual === 'angle-30' && <AngleThumb deg={30} />}
         {def.visual === 'angle-45' && <AngleThumb deg={45} />}
         {def.visual === 'drive' && <DriveThumb />}
+        {def.visual === 'retainer' && <RetainerThumb />}
+        {def.visual === 'support' && <SupportThumb />}
+        {def.visual === 'wheel' && <WheelThumb />}
+        {def.visual === 'enclosure' && <EnclosureThumb />}
+        {def.visual === 'control' && <ControlThumb />}
       </svg>
     </div>
   )
@@ -196,6 +201,65 @@ function DriveThumb() {
       <rect x="16" y="22" width="20" height="10" fill="#1f1f1f" stroke="#0a0a0a" />
       <circle cx="26" cy="16" r="3" fill="white" />
       <circle cx="26" cy="16" r="0.8" fill="#0a0a0a" />
+    </g>
+  )
+}
+
+function RetainerThumb() {
+  return (
+    <g fill="none" stroke={STROKE} strokeWidth={1}>
+      <rect x="5" y="16" width="30" height="8" stroke="#737373" />
+      <line x1="7" y1="12" x2="33" y2="12" strokeWidth={1.4} />
+      <line x1="7" y1="28" x2="33" y2="28" strokeWidth={1.4} />
+      <line x1="10" y1="12" x2="10" y2="28" stroke="#737373" />
+      <line x1="30" y1="12" x2="30" y2="28" stroke="#737373" />
+    </g>
+  )
+}
+
+function SupportThumb() {
+  return (
+    <g fill="none" stroke={STROKE} strokeWidth={1}>
+      <rect x="17" y="7" width="6" height="24" />
+      <line x1="9" y1="31" x2="31" y2="31" />
+      <line x1="20" y1="11" x2="20" y2="28" stroke="#737373" strokeWidth={0.6} />
+      <circle cx="14" cy="34" r="2.5" />
+      <circle cx="26" cy="34" r="2.5" />
+    </g>
+  )
+}
+
+function WheelThumb() {
+  return (
+    <g fill="none" stroke={STROKE} strokeWidth={1}>
+      <circle cx="20" cy="22" r="10" />
+      <circle cx="20" cy="22" r="2" fill={STROKE} />
+      <rect x="13" y="9" width="14" height="5" />
+      <line x1="20" y1="14" x2="20" y2="12" />
+    </g>
+  )
+}
+
+function EnclosureThumb() {
+  return (
+    <g fill="none" stroke={STROKE} strokeWidth={1}>
+      <path d="M7 25 L11 12 H29 L33 25 Z" />
+      <rect x="9" y="25" width="22" height="4" />
+      <line x1="14" y1="14" x2="12" y2="23" stroke="#737373" strokeWidth={0.6} />
+      <line x1="20" y1="14" x2="20" y2="23" stroke="#737373" strokeWidth={0.6} />
+      <line x1="26" y1="14" x2="28" y2="23" stroke="#737373" strokeWidth={0.6} />
+    </g>
+  )
+}
+
+function ControlThumb() {
+  return (
+    <g fill="none" stroke={STROKE} strokeWidth={1}>
+      <rect x="10" y="8" width="20" height="24" rx="1" />
+      <circle cx="16" cy="15" r="2" fill="#dc2626" stroke="#0a0a0a" />
+      <circle cx="24" cy="15" r="2" fill="#16a34a" stroke="#0a0a0a" />
+      <line x1="14" y1="22" x2="26" y2="22" stroke="#737373" />
+      <line x1="14" y1="26" x2="26" y2="26" stroke="#737373" />
     </g>
   )
 }
