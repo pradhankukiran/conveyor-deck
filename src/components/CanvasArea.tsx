@@ -6,6 +6,7 @@ import { ModuleShape } from '../modules/ModuleShape'
 import { AutoLegs } from '../modules/AutoLegs'
 import { computeChainGeometry } from '../lib/chainGeometry'
 import { redo, undo } from '../lib/history'
+import { TopViewInset } from './TopViewInset'
 import { setStageHandle } from '../lib/stageHandle'
 import { fitBoundsToViewport } from '../lib/bounds'
 
@@ -282,6 +283,7 @@ export function CanvasArea() {
       </div>
 
       <ChainEmptyState empty={links.length === 0} />
+      <TopViewInset />
 
       <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-2">
         <span className="pointer-events-auto rounded-md bg-white/80 px-2 py-1 text-xs font-medium text-stone-600 ring-1 ring-stone-200 backdrop-blur">
