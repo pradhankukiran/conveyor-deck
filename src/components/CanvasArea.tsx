@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Layer, Line, Stage } from 'react-konva'
+import { Circle, Layer, Line, Stage } from 'react-konva'
 import type Konva from 'konva'
 import { MODULE_DRAG_TYPE, useStore } from '../lib/store'
 import type { ModuleKind } from '../modules/types'
 import { ModuleShape } from '../modules/ModuleShape'
 import { MODULES } from '../modules/registry'
+import { computeSnap } from '../lib/snap'
 
 const GRID_SPACING = 20
 const GRID_EXTENT = 2500
@@ -27,6 +28,10 @@ export function CanvasArea() {
   const [middleDown, setMiddleDown] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [dropHover, setDropHover] = useState(false)
+  const [snapIndicator, setSnapIndicator] = useState<{
+    x: number
+    y: number
+  } | null>(null)
 
   const modules = useStore((s) => s.modules)
   const conveyorWidth = useStore((s) => s.conveyorWidth)
@@ -220,6 +225,38 @@ export function CanvasArea() {
     [handleMouseDown, selectModule],
   )
 
+  const handleModuleDragMove = useCallback(
+    (id: string, x: number, y: number) => {
+      const dragged = modules.find((m) => m.id === id)
+      if (!dragged) {
+        updateModulePosition(id, x, y)
+        return null
+      }
+      const snap = computeSnap(
+        modules,
+        { id, kind: dragged.kind, x, y, rotation: dragged.rotation },
+        conveyorWidth,
+      )
+      if (snap) {
+        setSnapIndicator(snap.target)
+        updateModulePosition(id, snap.x, snap.y)
+        return { x: snap.x, y: snap.y }
+      }
+      setSnapIndicator(null)
+      updateModulePosition(id, x, y)
+      return null
+    },
+    [modules, conveyorWidth, updateModulePosition],
+  )
+
+  const handleModuleDragEnd = useCallback(
+    (id: string, x: number, y: number) => {
+      setSnapIndicator(null)
+      updateModulePosition(id, x, y)
+    },
+    [updateModulePosition],
+  )
+
   const cursor = panEnabled ? (isDragging ? 'grabbing' : 'grab') : 'default'
 
   return (
@@ -272,10 +309,31 @@ export function CanvasArea() {
                   conveyorWidth={conveyorWidth}
                   selected={m.id === selectedModuleId}
                   onSelect={() => selectModule(m.id)}
-                  onDragMove={(x, y) => updateModulePosition(m.id, x, y)}
-                  onDragEnd={(x, y) => updateModulePosition(m.id, x, y)}
+                  onDragMove={(x, y) => handleModuleDragMove(m.id, x, y)}
+                  onDragEnd={(x, y) => handleModuleDragEnd(m.id, x, y)}
                 />
               ))}
+              {snapIndicator && (
+                <>
+                  <Circle
+                    x={snapIndicator.x}
+                    y={snapIndicator.y}
+                    radius={18}
+                    stroke="#ea580c"
+                    strokeWidth={2}
+                    dash={[4, 4]}
+                    strokeScaleEnabled={false}
+                    listening={false}
+                  />
+                  <Circle
+                    x={snapIndicator.x}
+                    y={snapIndicator.y}
+                    radius={4}
+                    fill="#ea580c"
+                    listening={false}
+                  />
+                </>
+              )}
             </Layer>
           </Stage>
         )}

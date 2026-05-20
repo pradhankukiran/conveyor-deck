@@ -22,7 +22,8 @@ type Props = {
   conveyorWidth: number
   selected: boolean
   onSelect: () => void
-  onDragMove: (x: number, y: number) => void
+  /** Called continuously during drag. Return an adjusted {x,y} to snap the visual. */
+  onDragMove: (x: number, y: number) => { x: number; y: number } | null
   onDragEnd: (x: number, y: number) => void
 }
 
@@ -41,7 +42,11 @@ export function ModuleShape({
     : (def.fixedWidth ?? 100)
 
   const handleDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
-    onDragMove(e.target.x(), e.target.y())
+    const adjusted = onDragMove(e.target.x(), e.target.y())
+    if (adjusted) {
+      e.target.x(adjusted.x)
+      e.target.y(adjusted.y)
+    }
   }
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
     onDragEnd(e.target.x(), e.target.y())
