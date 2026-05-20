@@ -1,73 +1,117 @@
-# React + TypeScript + Vite
+# ConveyorDeck
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+ConveyorDeck is a working web prototype for creating modular conveyor layout drawings and generating early-stage sales pricing.
 
-Currently, two official plugins are available:
+The goal is to validate the configurator workflow in a browser before moving the product to a standalone Windows desktop application.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## What It Does
 
-## React Compiler
+- Build a modular conveyor chain from a component library.
+- Drag modules onto a 2D grid canvas.
+- Snap modules into valid chain positions.
+- Generate side elevation and top-view drawing output.
+- Edit conveyor width from 100 mm to 1200 mm in 50 mm increments.
+- Configure belt, motor, gearbox, controls, customer, title, and drawing number.
+- Add accessory quantities for retainers, supports, enclosures, castors, wheels, VSD, and emergency stop.
+- Override support pair counts.
+- Override module/accessory pricing from an admin-style panel.
+- Show compatibility warnings for width, belt, motor, gearbox, and controls.
+- Generate BOM and indicative pricing.
+- Export quotation PDF.
+- Export Excel costing/BOM workbook.
+- Import/export project JSON files.
+- Persist local working state in the browser.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Current Status
 
-## Expanding the ESLint configuration
+This is a functional prototype, not a production-released quoting system.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+The app uses real geometry, drawing, BOM, export, and rules logic. Pricing values, catalogue data, and engineering rules are currently representative and must be validated against the real company standards before production use.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Tech Stack
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- Zustand
+- Konva / React Konva
+- jsPDF
+- SheetJS `xlsx`
+- Vitest
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Getting Started
+
+Install dependencies:
+
+```bash
+pnpm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Run the development server:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+pnpm dev
 ```
+
+Open:
+
+```text
+http://localhost:5173/
+```
+
+## Scripts
+
+```bash
+pnpm dev
+pnpm lint
+pnpm test
+pnpm build
+pnpm preview
+```
+
+## Main Areas
+
+- `src/components/CanvasArea.tsx` - interactive 2D drawing canvas.
+- `src/components/ModulePalette.tsx` - draggable module library.
+- `src/components/PropertiesPanel.tsx` - drawing setup, accessories, BOM, rules, pricing overrides.
+- `src/modules/registry.ts` - module catalogue and pricing metadata.
+- `src/lib/store.ts` - persisted application state.
+- `src/lib/chainGeometry.ts` - conveyor geometry engine.
+- `src/lib/bom.ts` - BOM and pricing calculation.
+- `src/lib/rules.ts` - compatibility warning engine.
+- `src/lib/exportPdf.ts` - quotation PDF generation.
+- `src/lib/exportExcel.ts` - Excel workbook export.
+- `src/lib/projectFile.ts` - JSON project import/export.
+
+## Demo Notes
+
+The Reset to PACT button seeds a sample conveyor:
+
+```text
+feed -> straight -> 30 degree up -> straight -> 30 degree down -> straight -> drive
+```
+
+Use this to demonstrate the core flow:
+
+```text
+Select module -> drag to canvas -> snap into chain -> edit specs -> review BOM -> export PDF/Excel
+```
+
+## Important Caveats
+
+- Prices are placeholder/indicative.
+- Engineering rules require validation against real company standards.
+- Accessory workflow is quantity/configuration based; individual accessory canvas placement is not yet CAD-style.
+- PDF output is quotation-demo quality and should be aligned with final company drawing standards.
+- No formal customer UAT or production QA sign-off has been completed.
+
+## Suggested Next Steps
+
+- Replace placeholder module data and prices with the real catalogue.
+- Validate support spacing, motor, gearbox, belt, and width rules with engineering.
+- Add accessory canvas placement for retainers, guards, E-stops, and support overrides.
+- Add a dedicated admin screen backed by a database/config file.
+- Add project list/save management.
+- Add more automated tests around exports and edge-case chain layouts.
+- Port the validated domain model to the future C# desktop application.
