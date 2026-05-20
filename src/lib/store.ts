@@ -12,11 +12,20 @@ export type DrawingMeta = {
   feedShield: 'yes' | 'no'
 }
 
+export type ViewState = {
+  x: number
+  y: number
+  scale: number
+}
+
 type StoreState = {
   conveyorWidth: number
   modules: ModuleInstance[]
   selectedModuleId: string | null
   drawing: DrawingMeta
+  view: ViewState
+  /** Bumped whenever something else wants to reset the camera. */
+  viewResetToken: number
 
   setConveyorWidth: (mm: number) => void
   addModule: (kind: ModuleKind, x: number, y: number, rotation?: number) => string
@@ -29,6 +38,8 @@ type StoreState = {
     key: K,
     value: DrawingMeta[K],
   ) => void
+  setView: (v: Partial<ViewState>) => void
+  requestViewReset: () => void
   clear: () => void
 }
 
@@ -51,6 +62,8 @@ export const useStore = create<StoreState>((set) => ({
   modules: [],
   selectedModuleId: null,
   drawing: initialDrawing,
+  view: { x: 0, y: 0, scale: 1 },
+  viewResetToken: 0,
 
   setConveyorWidth: (mm) => set({ conveyorWidth: mm }),
 
@@ -95,6 +108,12 @@ export const useStore = create<StoreState>((set) => ({
 
   setDrawingField: (key, value) =>
     set((s) => ({ drawing: { ...s.drawing, [key]: value } })),
+
+  setView: (v) =>
+    set((s) => ({ view: { ...s.view, ...v } })),
+
+  requestViewReset: () =>
+    set((s) => ({ viewResetToken: s.viewResetToken + 1 })),
 
   clear: () => set({ modules: [], selectedModuleId: null }),
 }))

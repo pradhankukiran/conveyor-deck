@@ -7,6 +7,7 @@ import { ModuleShape } from '../modules/ModuleShape'
 import { MODULES } from '../modules/registry'
 import { computeSnap } from '../lib/snap'
 import { setStageHandle } from '../lib/stageHandle'
+import { fitBoundsToViewport, getModuleBounds } from '../lib/bounds'
 
 const GRID_SPACING = 20
 const GRID_EXTENT = 2500
@@ -42,6 +43,8 @@ export function CanvasArea() {
   const selectModule = useStore((s) => s.selectModule)
   const removeSelected = useStore((s) => s.removeSelected)
   const rotateModule = useStore((s) => s.rotateModule)
+  const viewResetToken = useStore((s) => s.viewResetToken)
+  const setStoreView = useStore((s) => s.setView)
 
   // Track parent size with ResizeObserver
   useEffect(() => {
@@ -60,6 +63,29 @@ export function CanvasArea() {
     setStageHandle(stageRef.current)
     return () => setStageHandle(null)
   }, [size.width, size.height])
+
+  // Sync local view → store so other code (exports, etc.) sees current camera
+  useEffect(() => {
+    setStoreView({ x: stagePos.x, y: stagePos.y, scale: stageScale })
+  }, [stagePos.x, stagePos.y, stageScale, setStoreView])
+
+  // Fit-to-content when explicitly requested (seed bumps viewResetToken)
+  useEffect(() => {
+    if (size.width === 0 || size.height === 0) return
+    const mods = useStore.getState().modules
+    const bounds = getModuleBounds(mods, conveyorWidth)
+    if (!bounds) {
+      setStageScale(1)
+      setStagePos({ x: 0, y: 0 })
+      return
+    }
+    const fit = fitBoundsToViewport(bounds, size, {
+      padding: 60,
+      maxScale: 0.7,
+    })
+    setStageScale(fit.scale)
+    setStagePos({ x: fit.x, y: fit.y })
+  }, [viewResetToken, size.width, size.height, conveyorWidth])
 
   // Global key handling (space pan, delete, r rotate)
   useEffect(() => {
@@ -181,9 +207,21 @@ export function CanvasArea() {
   )
 
   const resetView = useCallback(() => {
-    setStageScale(1)
-    setStagePos({ x: 0, y: 0 })
-  }, [])
+    const mods = useStore.getState().modules
+    const cw = useStore.getState().conveyorWidth
+    const bounds = getModuleBounds(mods, cw)
+    if (!bounds || size.width === 0 || size.height === 0) {
+      setStageScale(1)
+      setStagePos({ x: 0, y: 0 })
+      return
+    }
+    const fit = fitBoundsToViewport(bounds, size, {
+      padding: 60,
+      maxScale: 0.7,
+    })
+    setStageScale(fit.scale)
+    setStagePos({ x: fit.x, y: fit.y })
+  }, [size])
 
   // HTML5 drop: receive a module kind from the palette and place it
   const onWrapperDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
