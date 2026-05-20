@@ -11,8 +11,8 @@ import { fitBoundsToViewport, getModuleBounds } from '../lib/bounds'
 
 const GRID_SPACING = 20
 const GRID_EXTENT = 2500
-const GRID_COLOR_MINOR = '#e7e5e4'
-const GRID_COLOR_MAJOR = '#d6d3d1'
+const GRID_COLOR_MINOR = '#f5f5f4'
+const GRID_COLOR_MAJOR = '#e7e5e4'
 const MIN_SCALE = 0.1
 const MAX_SCALE = 5
 const ZOOM_STEP = 1.05
@@ -305,7 +305,7 @@ export function CanvasArea() {
   const cursor = panEnabled ? (isDragging ? 'grabbing' : 'grab') : 'default'
 
   return (
-    <main className="relative flex-1 overflow-hidden bg-stone-50">
+    <main className="relative flex-1 overflow-hidden bg-white">
       <div
         ref={wrapperRef}
         className="absolute inset-0"
