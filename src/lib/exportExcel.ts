@@ -1,72 +1,82 @@
 import * as XLSX from 'xlsx'
-import { useStore } from '../lib/store'
-import { computeBom } from '../lib/bom'
+import { useStore } from './store'
+import { computeBom } from './bom'
 
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : String(n)
-}
-
-function todayParts(): { iso: string; compact: string } {
-  const d = new Date()
+function ymd(d: Date): string {
   const y = d.getFullYear()
-  const m = pad2(d.getMonth() + 1)
-  const day = pad2(d.getDate())
-  return { iso: `${y}-${m}-${day}`, compact: `${y}${m}${day}` }
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}${m}${day}`
+}
+function ymdDash(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 export function exportConveyorExcel(): void {
-  const { modules, conveyorWidth, drawing } = useStore.getState()
-  const bom = computeBom(modules, conveyorWidth)
-  const { iso, compact } = todayParts()
+  const { links, conveyorWidth, drawing } = useStore.getState()
+  const bom = computeBom(links, conveyorWidth, drawing)
+  const today = new Date()
 
-  // --- Sheet 1: BOM ---
-  const bomAoa: (string | number)[][] = [
+  // --- BOM sheet ---
+  const bomRows: (string | number)[][] = [
     ['ConveyorDeck Quotation'],
     ['Drawing Title', drawing.title],
     ['Customer', drawing.customer],
     ['Drawing No.', drawing.drawingNumber],
-    ['Date', iso],
+    ['Date', ymdDash(today)],
     ['Conveyor Width', `${conveyorWidth} mm`],
     [],
     [],
-    ['Item', 'Group', 'Qty', 'Unit Price (AUD)', 'Line Total (AUD)'],
+    ['Item', 'Detail', 'Qty', 'Unit', 'Unit Price (AUD)', 'Line Total (AUD)'],
   ]
-
-  for (const row of bom.rows) {
-    bomAoa.push([row.label, row.group, row.qty, row.unitPrice, row.lineTotal])
+  for (const r of bom.rows) {
+    bomRows.push([
+      r.label,
+      r.detail ?? '',
+      r.qty,
+      r.unit,
+      r.unitPrice,
+      r.lineTotal,
+    ])
   }
+  bomRows.push(['SUBTOTAL', '', '', '', '', bom.subtotal])
 
-  bomAoa.push(['TOTAL', '', '', '', bom.total])
-
-  const bomSheet = XLSX.utils.aoa_to_sheet(bomAoa)
-  bomSheet['!cols'] = [
+  const wsBom = XLSX.utils.aoa_to_sheet(bomRows)
+  wsBom['!cols'] = [
+    { wch: 30 },
     { wch: 28 },
-    { wch: 12 },
+    { wch: 8 },
     { wch: 8 },
     { wch: 18 },
     { wch: 18 },
   ]
 
-  // --- Sheet 2: Specs ---
-  const specsAoa: (string | number)[][] = [
+  // --- Specs sheet ---
+  const specsRows: (string | number)[][] = [
     ['Belt', drawing.belt],
     ['Motor', drawing.motor],
     ['Gearbox', drawing.gearbox],
     ['Control', drawing.control],
     ['Feed Shield', drawing.feedShield === 'yes' ? 'Yes' : 'No'],
     ['Width', `${conveyorWidth} mm`],
+    [],
+    ['Footprint length (mm)', Math.round(bom.footprintLengthMm)],
+    ['Belt path length (mm)', Math.round(bom.beltLengthMm)],
+    ['Overall height (mm)', Math.round(bom.heightMm)],
+    ['Belt area (m²)', Number(bom.beltAreaM2.toFixed(2))],
+    ['Leg count', bom.legCount],
   ]
+  const wsSpecs = XLSX.utils.aoa_to_sheet(specsRows)
+  wsSpecs['!cols'] = [{ wch: 26 }, { wch: 30 }]
 
-  const specsSheet = XLSX.utils.aoa_to_sheet(specsAoa)
-  specsSheet['!cols'] = [{ wch: 20 }, { wch: 30 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, wsBom, 'BOM')
+  XLSX.utils.book_append_sheet(wb, wsSpecs, 'Specs')
 
-  // --- Workbook ---
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, bomSheet, 'BOM')
-  XLSX.utils.book_append_sheet(workbook, specsSheet, 'Specs')
-
-  const base = drawing.drawingNumber || 'conveyor'
-  const filename = `${base}-${compact}.xlsx`
-
-  XLSX.writeFile(workbook, filename)
+  const baseName = drawing.drawingNumber?.trim() || 'conveyor'
+  const safe = baseName.replace(/[^a-zA-Z0-9_\-]+/g, '-')
+  XLSX.writeFile(wb, `${safe}-${ymd(today)}.xlsx`)
 }

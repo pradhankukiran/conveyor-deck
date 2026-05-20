@@ -5,33 +5,15 @@ export type ModuleKind =
   | 'angle-30'
   | 'angle-45'
   | 'drive'
-  | 'leg-40'
-  | 'leg-80'
-  | 'castor'
-  | 'castor-brake'
 
-export type PortFacing = 'east' | 'west' | 'north' | 'south'
-
-export type PortKind = 'belt' | 'support'
-
-export type Port = {
-  id: string
-  kind: PortKind
-  facing: PortFacing
-  /** local mm coords relative to module origin (top-left of bounding box, looking top-down) */
-  x: number
-  y: number
-}
+export type LinkVariant = 'horizontal' | 'incline-up' | 'incline-down'
 
 export type VisualStyle =
-  | 'plain'
   | 'feed'
-  | 'drive'
+  | 'plain'
   | 'angle-30'
   | 'angle-45'
-  | 'leg'
-  | 'castor'
-  | 'castor-brake'
+  | 'drive'
 
 export type PaletteGroup = 'belt' | 'support' | 'control'
 
@@ -42,32 +24,29 @@ export type ModuleDef = {
   description: string
   group: PaletteGroup
 
-  /** Length along belt direction (mm). For non-belt parts this is the footprint length. */
+  /** Length along belt direction (mm). */
   length: number
-  /** If true, the visual width tracks the global conveyor width. */
+  /** True if this module is a belt segment with its width tied to the conveyor width. */
   matchesConveyorWidth: boolean
-  /** Used only when matchesConveyorWidth is false. */
-  fixedWidth?: number
 
-  /** Generate connection ports given the current conveyor width. */
-  ports: (conveyorWidthMm: number) => Port[]
+  /** For angle modules: the bend in degrees (always positive; variant decides sign). */
+  bendDeg?: number
 
-  /** Renderer hint — concrete shape is drawn by the canvas. */
+  /** Visual style key used by the renderer. */
   visual: VisualStyle
+
+  /** Role in the chain — drives connection rules. */
+  role: 'feed' | 'middle' | 'angle' | 'drive'
 
   /** Base unit price (AUD). */
   basePrice: number
-  /** Linear cost adder per mm of conveyor width above the 100mm baseline. */
+  /** Optional cost adder per mm of conveyor width above 100mm baseline. */
   pricePerMmWidth: number
 }
 
-/** A single instance placed on the canvas. */
-export type ModuleInstance = {
+/** A single link in the chain. Position is derived from order via chain walk. */
+export type Link = {
   id: string
   kind: ModuleKind
-  /** World-space position of the module origin (mm). */
-  x: number
-  y: number
-  /** Rotation in degrees (top-view), 0 = belt runs east. */
-  rotation: number
+  variant: LinkVariant
 }

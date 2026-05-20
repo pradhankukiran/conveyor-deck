@@ -1,16 +1,16 @@
 import { useStore } from './store'
 
 /**
- * Seeds the canvas with a Z-incline conveyor mimicking the PACT reference
- * drawing — feed + straight + 30° angle + straight + drive at 600mm width,
- * with supports underneath. Run once when modules.length === 0.
+ * Seeds the canvas with a Z-incline conveyor matching the PACT reference
+ * drawing: feed → straight → 30° up → straight → 30° down → straight → drive.
+ * Bottom run, incline section, top discharge — same geometry shape as PACT.
  */
 export function seedDemoConveyor() {
   const state = useStore.getState()
-  if (state.modules.length > 0) return
+  if (state.links.length > 0) return
 
-  state.setDrawingField('title', 'PACT (Demo)')
-  state.setDrawingField('customer', 'Fleming Demo')
+  state.setDrawingField('title', 'PACT')
+  state.setDrawingField('customer', 'Demo Customer')
   state.setDrawingField('drawingNumber', 'DWG211614')
   state.setDrawingField('belt', 'Flat top grey PP')
   state.setDrawingField('motor', '0.18 kW 3PH')
@@ -19,35 +19,19 @@ export function seedDemoConveyor() {
   state.setDrawingField('feedShield', 'no')
   state.setConveyorWidth(600)
 
-  // y=0 places the belt with top edge at the world origin.
-  const beltY = 0
-  let x = 0
+  state.addLink('feed')
+  state.addLink('straight-short')
 
-  const feed = state.addModule('feed', x, beltY)
-  x += 500 // feed length
+  const up = state.addLink('angle-30')
+  if (up) state.setLinkVariant(up, 'incline-up')
 
-  state.addModule('straight-short', x, beltY)
-  x += 600
+  state.addLink('straight-long')
 
-  state.addModule('angle-30', x, beltY)
-  x += 400
+  const down = state.addLink('angle-30')
+  if (down) state.setLinkVariant(down, 'incline-down')
 
-  state.addModule('straight-long', x, beltY)
-  x += 1700
+  state.addLink('straight-short')
+  state.addLink('drive')
 
-  state.addModule('drive', x, beltY)
-
-  // supports beneath the conveyor (top-view, offset below belt)
-  const supportY = 620
-  state.addModule('leg-40', 240, supportY)
-  state.addModule('leg-40', 1240, supportY)
-  state.addModule('leg-40', 2440, supportY)
-
-  state.addModule('castor-brake', 240 + 80, supportY + 60)
-  state.addModule('castor', 1240 + 80, supportY + 60)
-  state.addModule('castor', 2440 + 80, supportY + 60)
-
-  // The feed module was created first; select nothing so the user can explore
-  state.selectModule(null)
-  void feed
+  state.selectLink(null)
 }

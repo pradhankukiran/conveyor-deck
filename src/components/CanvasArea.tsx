@@ -1,21 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Circle, Layer, Line, Stage } from 'react-konva'
+import { Group, Layer, Line, Path, Stage, Text } from 'react-konva'
 import type Konva from 'konva'
-import { MODULE_DRAG_TYPE, useStore } from '../lib/store'
-import type { ModuleKind } from '../modules/types'
+import { useStore } from '../lib/store'
 import { ModuleShape } from '../modules/ModuleShape'
-import { MODULES } from '../modules/registry'
-import { computeSnap } from '../lib/snap'
+import { computeChainGeometry } from '../lib/chainGeometry'
 import { setStageHandle } from '../lib/stageHandle'
-import { fitBoundsToViewport, getModuleBounds } from '../lib/bounds'
+import { fitBoundsToViewport } from '../lib/bounds'
 
-const GRID_SPACING = 20
-const GRID_EXTENT = 2500
+const GRID_SPACING = 100 // mm; coarse engineering grid
+const GRID_MINOR = 20
+const GRID_EXTENT = 6000
 const GRID_COLOR_MINOR = '#f5f5f4'
 const GRID_COLOR_MAJOR = '#e7e5e4'
-const MIN_SCALE = 0.1
+const MIN_SCALE = 0.05
 const MAX_SCALE = 5
 const ZOOM_STEP = 1.05
+const DIM = '#525252'
+const DIM_ACCENT = '#0a0a0a'
 
 type GridLine = { points: number[]; major: boolean }
 
@@ -29,24 +30,20 @@ export function CanvasArea() {
   const [spaceDown, setSpaceDown] = useState(false)
   const [middleDown, setMiddleDown] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
-  const [dropHover, setDropHover] = useState(false)
-  const [snapIndicator, setSnapIndicator] = useState<{
-    x: number
-    y: number
-  } | null>(null)
 
-  const modules = useStore((s) => s.modules)
+  const links = useStore((s) => s.links)
   const conveyorWidth = useStore((s) => s.conveyorWidth)
-  const selectedModuleId = useStore((s) => s.selectedModuleId)
-  const addModule = useStore((s) => s.addModule)
-  const updateModulePosition = useStore((s) => s.updateModulePosition)
-  const selectModule = useStore((s) => s.selectModule)
+  const selectedLinkId = useStore((s) => s.selectedLinkId)
+  const selectLink = useStore((s) => s.selectLink)
   const removeSelected = useStore((s) => s.removeSelected)
-  const rotateModule = useStore((s) => s.rotateModule)
   const viewResetToken = useStore((s) => s.viewResetToken)
   const setStoreView = useStore((s) => s.setView)
 
-  // Track parent size with ResizeObserver
+  const geom = useMemo(
+    () => computeChainGeometry(links, conveyorWidth),
+    [links, conveyorWidth],
+  )
+
   useEffect(() => {
     const el = wrapperRef.current
     if (!el) return
@@ -58,36 +55,37 @@ export function CanvasArea() {
     return () => ro.disconnect()
   }, [])
 
-  // Publish the stage handle so exports can snapshot it
   useEffect(() => {
     setStageHandle(stageRef.current)
     return () => setStageHandle(null)
   }, [size.width, size.height])
 
-  // Sync local view → store so other code (exports, etc.) sees current camera
   useEffect(() => {
     setStoreView({ x: stagePos.x, y: stagePos.y, scale: stageScale })
   }, [stagePos.x, stagePos.y, stageScale, setStoreView])
 
-  // Fit-to-content when explicitly requested (seed bumps viewResetToken)
   useEffect(() => {
     if (size.width === 0 || size.height === 0) return
-    const mods = useStore.getState().modules
-    const bounds = getModuleBounds(mods, conveyorWidth)
+    const bounds = geom.bounds
     if (!bounds) {
       setStageScale(1)
-      setStagePos({ x: 0, y: 0 })
+      setStagePos({ x: size.width / 2, y: size.height / 2 })
       return
     }
-    const fit = fitBoundsToViewport(bounds, size, {
-      padding: 60,
-      maxScale: 0.7,
-    })
+    // Pad to leave room for dimension lines outside the modules
+    const padded = {
+      x: bounds.x - 250,
+      y: bounds.y - 250,
+      width: bounds.width + 500,
+      height: bounds.height + 500,
+    }
+    const fit = fitBoundsToViewport(padded, size, { padding: 40, maxScale: 0.6 })
     setStageScale(fit.scale)
     setStagePos({ x: fit.x, y: fit.y })
-  }, [viewResetToken, size.width, size.height, conveyorWidth])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewResetToken, size.width, size.height])
 
-  // Global key handling (space pan, delete, r rotate)
+  // Keyboard
   useEffect(() => {
     const isEditable = (target: EventTarget | null) => {
       if (!(target instanceof HTMLElement)) return false
@@ -105,17 +103,12 @@ export function CanvasArea() {
         e.preventDefault()
         setSpaceDown(true)
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selectedModuleId) {
+        if (selectedLinkId) {
           e.preventDefault()
           removeSelected()
         }
-      } else if (e.key === 'r' || e.key === 'R') {
-        if (selectedModuleId) {
-          e.preventDefault()
-          rotateModule(selectedModuleId, e.shiftKey ? -15 : 15)
-        }
       } else if (e.key === 'Escape') {
-        selectModule(null)
+        selectLink(null)
       }
     }
     const onKeyUp = (e: KeyboardEvent) => {
@@ -127,9 +120,8 @@ export function CanvasArea() {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
     }
-  }, [selectedModuleId, removeSelected, rotateModule, selectModule])
+  }, [selectedLinkId, removeSelected, selectLink])
 
-  // If the mouse leaves the window while MMB is held, release the pan latch.
   useEffect(() => {
     if (!middleDown) return
     const onUp = (e: MouseEvent) => {
@@ -143,12 +135,12 @@ export function CanvasArea() {
 
   const gridLines = useMemo<GridLine[]>(() => {
     const lines: GridLine[] = []
-    for (let x = -GRID_EXTENT; x <= GRID_EXTENT; x += GRID_SPACING) {
-      const major = Math.round(x / GRID_SPACING) % 5 === 0
+    for (let x = -GRID_EXTENT; x <= GRID_EXTENT; x += GRID_MINOR) {
+      const major = x % GRID_SPACING === 0
       lines.push({ points: [x, -GRID_EXTENT, x, GRID_EXTENT], major })
     }
-    for (let y = -GRID_EXTENT; y <= GRID_EXTENT; y += GRID_SPACING) {
-      const major = Math.round(y / GRID_SPACING) % 5 === 0
+    for (let y = -GRID_EXTENT; y <= GRID_EXTENT; y += GRID_MINOR) {
+      const major = y % GRID_SPACING === 0
       lines.push({ points: [-GRID_EXTENT, y, GRID_EXTENT, y], major })
     }
     return lines
@@ -183,8 +175,11 @@ export function CanvasArea() {
         e.evt.preventDefault()
         setMiddleDown(true)
       }
+      if (e.target === stageRef.current) {
+        selectLink(null)
+      }
     },
-    [],
+    [selectLink],
   )
 
   const handleMouseUp = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -207,113 +202,14 @@ export function CanvasArea() {
   )
 
   const resetView = useCallback(() => {
-    const mods = useStore.getState().modules
-    const cw = useStore.getState().conveyorWidth
-    const bounds = getModuleBounds(mods, cw)
-    if (!bounds || size.width === 0 || size.height === 0) {
-      setStageScale(1)
-      setStagePos({ x: 0, y: 0 })
-      return
-    }
-    const fit = fitBoundsToViewport(bounds, size, {
-      padding: 60,
-      maxScale: 0.7,
-    })
-    setStageScale(fit.scale)
-    setStagePos({ x: fit.x, y: fit.y })
-  }, [size])
-
-  // HTML5 drop: receive a module kind from the palette and place it
-  const onWrapperDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (e.dataTransfer.types.includes(MODULE_DRAG_TYPE)) {
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'copy'
-      setDropHover(true)
-    }
+    useStore.getState().requestViewReset()
   }, [])
-
-  const onWrapperDragLeave = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
-      if (e.currentTarget === e.target) setDropHover(false)
-    },
-    [],
-  )
-
-  const onWrapperDrop = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
-      e.preventDefault()
-      setDropHover(false)
-      const kind = e.dataTransfer.getData(MODULE_DRAG_TYPE) as ModuleKind
-      if (!kind || !MODULES[kind]) return
-      const rect = wrapperRef.current?.getBoundingClientRect()
-      if (!rect) return
-      const screenX = e.clientX - rect.left
-      const screenY = e.clientY - rect.top
-      const worldX = (screenX - stagePos.x) / stageScale
-      const worldY = (screenY - stagePos.y) / stageScale
-      const def = MODULES[kind]
-      const w = def.matchesConveyorWidth
-        ? conveyorWidth
-        : (def.fixedWidth ?? 100)
-      // Center the module on the drop point
-      addModule(kind, worldX - def.length / 2, worldY - w / 2)
-    },
-    [addModule, conveyorWidth, stagePos.x, stagePos.y, stageScale],
-  )
-
-  // Click on empty area deselects
-  const handleStageMouseDown = useCallback(
-    (e: Konva.KonvaEventObject<MouseEvent>) => {
-      handleMouseDown(e)
-      if (e.target === stageRef.current) selectModule(null)
-    },
-    [handleMouseDown, selectModule],
-  )
-
-  const handleModuleDragMove = useCallback(
-    (id: string, x: number, y: number) => {
-      const dragged = modules.find((m) => m.id === id)
-      if (!dragged) {
-        updateModulePosition(id, x, y)
-        return null
-      }
-      const snap = computeSnap(
-        modules,
-        { id, kind: dragged.kind, x, y, rotation: dragged.rotation },
-        conveyorWidth,
-      )
-      if (snap) {
-        setSnapIndicator(snap.target)
-        updateModulePosition(id, snap.x, snap.y)
-        return { x: snap.x, y: snap.y }
-      }
-      setSnapIndicator(null)
-      updateModulePosition(id, x, y)
-      return null
-    },
-    [modules, conveyorWidth, updateModulePosition],
-  )
-
-  const handleModuleDragEnd = useCallback(
-    (id: string, x: number, y: number) => {
-      setSnapIndicator(null)
-      updateModulePosition(id, x, y)
-    },
-    [updateModulePosition],
-  )
 
   const cursor = panEnabled ? (isDragging ? 'grabbing' : 'grab') : 'default'
 
   return (
     <main className="relative flex-1 overflow-hidden bg-white">
-      <div
-        ref={wrapperRef}
-        className="absolute inset-0"
-        style={{ cursor }}
-        onDragOver={onWrapperDragOver}
-        onDragLeave={onWrapperDragLeave}
-        onDrop={onWrapperDrop}
-      >
+      <div ref={wrapperRef} className="absolute inset-0" style={{ cursor }}>
         {size.width > 0 && size.height > 0 && (
           <Stage
             ref={stageRef}
@@ -325,7 +221,7 @@ export function CanvasArea() {
             scaleY={stageScale}
             draggable={panEnabled}
             onWheel={handleWheel}
-            onMouseDown={handleStageMouseDown}
+            onMouseDown={handleMouseDown}
             onMouseUp={handleMouseUp}
             onDragStart={() => setIsDragging(true)}
             onDragMove={syncStagePos}
@@ -347,46 +243,26 @@ export function CanvasArea() {
             </Layer>
 
             <Layer>
-              {modules.map((m) => (
+              {geom.links.map((g) => (
                 <ModuleShape
-                  key={m.id}
-                  instance={m}
-                  conveyorWidth={conveyorWidth}
-                  selected={m.id === selectedModuleId}
-                  onSelect={() => selectModule(m.id)}
-                  onDragMove={(x, y) => handleModuleDragMove(m.id, x, y)}
-                  onDragEnd={(x, y) => handleModuleDragEnd(m.id, x, y)}
+                  key={g.id}
+                  geom={g}
+                  selected={g.id === selectedLinkId}
+                  onSelect={() => selectLink(g.id)}
                 />
               ))}
-              {snapIndicator && (
-                <>
-                  <Circle
-                    x={snapIndicator.x}
-                    y={snapIndicator.y}
-                    radius={18}
-                    stroke="#ea580c"
-                    strokeWidth={2}
-                    dash={[4, 4]}
-                    strokeScaleEnabled={false}
-                    listening={false}
-                  />
-                  <Circle
-                    x={snapIndicator.x}
-                    y={snapIndicator.y}
-                    radius={4}
-                    fill="#ea580c"
-                    listening={false}
-                  />
-                </>
+              {geom.bounds && (
+                <OverallDimensions
+                  bounds={geom.bounds}
+                  beltLengthMm={geom.pathLengthMm}
+                />
               )}
             </Layer>
           </Stage>
         )}
       </div>
 
-      {dropHover && (
-        <div className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-orange-400/60" />
-      )}
+      <ChainEmptyState empty={links.length === 0} />
 
       <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-2">
         <span className="pointer-events-auto rounded-md bg-white/80 px-2 py-1 text-xs font-medium text-stone-600 ring-1 ring-stone-200 backdrop-blur">
@@ -397,15 +273,14 @@ export function CanvasArea() {
           onClick={resetView}
           className="pointer-events-auto rounded-md bg-white/80 px-2 py-1 text-xs font-medium text-stone-700 ring-1 ring-stone-200 backdrop-blur transition hover:bg-white hover:text-stone-900"
         >
-          Reset view
+          Fit view
         </button>
       </div>
 
       <div className="pointer-events-none absolute bottom-3 right-3 flex items-center gap-2 text-[11px] text-stone-500">
-        <Hint label="Drag" detail="from palette" />
+        <Hint label="Click" detail="select link" />
         <Hint label="Space" detail="pan" />
         <Hint label="Wheel" detail="zoom" />
-        <Hint label="R" detail="rotate 15°" />
         <Hint label="Del" detail="remove" />
       </div>
     </main>
@@ -422,3 +297,141 @@ function Hint({ label, detail }: { label: string; detail: string }) {
     </span>
   )
 }
+
+function ChainEmptyState({ empty }: { empty: boolean }) {
+  if (!empty) return null
+  return (
+    <div className="pointer-events-none absolute inset-0 grid place-items-center">
+      <div className="pointer-events-auto rounded-md bg-white/90 px-4 py-3 text-center ring-1 ring-stone-200 backdrop-blur">
+        <p className="text-sm font-medium text-stone-800">No conveyor yet</p>
+        <p className="mt-1 text-xs text-stone-500">
+          Add a Feed section from the component library to begin.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function OverallDimensions({
+  bounds,
+  beltLengthMm,
+}: {
+  bounds: { x: number; y: number; width: number; height: number }
+  beltLengthMm: number
+}) {
+  const OFFSET = 140
+  const TICK = 30
+  const ARROW = 24
+  const TEXT_OFFSET = 70
+
+  const x0 = bounds.x
+  const x1 = bounds.x + bounds.width
+  const y0 = bounds.y
+  const y1 = bounds.y + bounds.height
+  const yDim = y1 + OFFSET
+  const xDim = x1 + OFFSET
+
+  return (
+    <Group listening={false}>
+      {/* Horizontal overall length dimension below */}
+      <Line
+        points={[x0, y1 + 20, x0, yDim + TICK / 2]}
+        stroke={DIM}
+        strokeWidth={DIM_WEIGHT_DIM}
+        strokeScaleEnabled={false}
+      />
+      <Line
+        points={[x1, y1 + 20, x1, yDim + TICK / 2]}
+        stroke={DIM}
+        strokeWidth={DIM_WEIGHT_DIM}
+        strokeScaleEnabled={false}
+      />
+      <Line
+        points={[x0, yDim, x1, yDim]}
+        stroke={DIM}
+        strokeWidth={DIM_WEIGHT_DIM}
+        strokeScaleEnabled={false}
+      />
+      <Path
+        data={`M ${x0 + ARROW} ${yDim - ARROW / 2.5} L ${x0} ${yDim} L ${x0 + ARROW} ${yDim + ARROW / 2.5}`}
+        stroke={DIM_ACCENT}
+        fill={DIM_ACCENT}
+        strokeWidth={1}
+        strokeScaleEnabled={false}
+      />
+      <Path
+        data={`M ${x1 - ARROW} ${yDim - ARROW / 2.5} L ${x1} ${yDim} L ${x1 - ARROW} ${yDim + ARROW / 2.5}`}
+        stroke={DIM_ACCENT}
+        fill={DIM_ACCENT}
+        strokeWidth={1}
+        strokeScaleEnabled={false}
+      />
+      <Text
+        x={(x0 + x1) / 2 - 80}
+        y={yDim - TEXT_OFFSET}
+        text={`${Math.round(bounds.width)} mm`}
+        fontFamily="ui-monospace, Menlo, Consolas, monospace"
+        fontSize={42}
+        fontStyle="700"
+        fill={DIM_ACCENT}
+      />
+      <Text
+        x={(x0 + x1) / 2 - 70}
+        y={yDim - TEXT_OFFSET + 50}
+        text={`(belt: ${Math.round(beltLengthMm)} mm)`}
+        fontFamily="ui-monospace, Menlo, Consolas, monospace"
+        fontSize={26}
+        fill={DIM}
+      />
+
+      {/* Vertical overall height dimension on the right */}
+      {bounds.height > 60 && (
+        <>
+          <Line
+            points={[x1 + 20, y0, xDim + TICK / 2, y0]}
+            stroke={DIM}
+            strokeWidth={DIM_WEIGHT_DIM}
+            strokeScaleEnabled={false}
+          />
+          <Line
+            points={[x1 + 20, y1, xDim + TICK / 2, y1]}
+            stroke={DIM}
+            strokeWidth={DIM_WEIGHT_DIM}
+            strokeScaleEnabled={false}
+          />
+          <Line
+            points={[xDim, y0, xDim, y1]}
+            stroke={DIM}
+            strokeWidth={DIM_WEIGHT_DIM}
+            strokeScaleEnabled={false}
+          />
+          <Path
+            data={`M ${xDim - ARROW / 2.5} ${y0 + ARROW} L ${xDim} ${y0} L ${xDim + ARROW / 2.5} ${y0 + ARROW}`}
+            stroke={DIM_ACCENT}
+            fill={DIM_ACCENT}
+            strokeWidth={1}
+            strokeScaleEnabled={false}
+          />
+          <Path
+            data={`M ${xDim - ARROW / 2.5} ${y1 - ARROW} L ${xDim} ${y1} L ${xDim + ARROW / 2.5} ${y1 - ARROW}`}
+            stroke={DIM_ACCENT}
+            fill={DIM_ACCENT}
+            strokeWidth={1}
+            strokeScaleEnabled={false}
+          />
+          <Text
+            x={xDim + 20}
+            y={(y0 + y1) / 2 - 22}
+            text={`${Math.round(bounds.height)} mm`}
+            fontFamily="ui-monospace, Menlo, Consolas, monospace"
+            fontSize={42}
+            fontStyle="700"
+            fill={DIM_ACCENT}
+          />
+        </>
+      )}
+    </Group>
+  )
+}
+
+const DIM_WEIGHT_DIM = 1.2
