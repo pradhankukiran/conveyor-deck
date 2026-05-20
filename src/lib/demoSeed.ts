@@ -21,17 +21,15 @@ export function seedDemoConveyor() {
 
   state.addLink('feed')
   state.addLink('straight-short')
-
-  const up = state.addLink('angle-30')
-  if (up) state.setLinkVariant(up, 'incline-up')
-
   state.addLink('straight-long')
-
-  const down = state.addLink('angle-30')
-  if (down) state.setLinkVariant(down, 'incline-down')
-
   state.addLink('straight-short')
   state.addLink('drive')
+
+  const up = state.insertLink('angle-30', 2)
+  if (up) state.setLinkVariant(up, 'incline-up')
+
+  const down = state.insertLink('angle-30', 4)
+  if (down) state.setLinkVariant(down, 'incline-down')
 
   state.selectLink(null)
 }
