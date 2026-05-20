@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import type { Link, LinkVariant, ModuleKind } from '../modules/types'
 import { MODULES } from '../modules/registry'
 
@@ -53,6 +54,15 @@ type StoreState = {
 
 let idCounter = 0
 const nextId = () => `L${++idCounter}`
+function bumpIdCounterFor(links: Link[]) {
+  for (const l of links) {
+    const m = /^L(\d+)$/.exec(l.id)
+    if (m) {
+      const n = Number(m[1])
+      if (n > idCounter) idCounter = n
+    }
+  }
+}
 
 const initialDrawing: DrawingMeta = {
   title: '',
@@ -132,7 +142,9 @@ export function validateChain(
   return { ok: true }
 }
 
-export const useStore = create<StoreState>((set, get) => ({
+export const useStore = create<StoreState>()(
+  persist(
+    (set, get) => ({
   conveyorWidth: 600,
   links: [],
   selectedLinkId: null,
@@ -226,6 +238,20 @@ export const useStore = create<StoreState>((set, get) => ({
         ? { conveyorWidth: s.conveyorWidth }
         : {}),
     })),
-}))
+    }),
+    {
+      name: 'conveyordeck.v1',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (s) => ({
+        conveyorWidth: s.conveyorWidth,
+        links: s.links,
+        drawing: s.drawing,
+      }),
+      onRehydrateStorage: () => (state) => {
+        if (state?.links) bumpIdCounterFor(state.links)
+      },
+    },
+  ),
+)
 
 export const MODULE_DRAG_TYPE = 'application/x-conveyor-module'

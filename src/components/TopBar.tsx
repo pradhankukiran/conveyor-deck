@@ -1,10 +1,14 @@
 import { useState } from 'react'
-import { FileDown, FileSpreadsheet, Loader2 } from 'lucide-react'
+import { FileDown, FileSpreadsheet, Loader2, RotateCcw } from 'lucide-react'
 import { exportConveyorPdf } from '../lib/exportPdf'
 import { exportConveyorExcel } from '../lib/exportExcel'
+import { useStore } from '../lib/store'
+import { seedDemoConveyor } from '../lib/demoSeed'
 
 export function TopBar() {
   const [pdfBusy, setPdfBusy] = useState(false)
+  const clear = useStore((s) => s.clear)
+  const requestViewReset = useStore((s) => s.requestViewReset)
 
   const onExportPdf = async () => {
     if (pdfBusy) return
@@ -26,9 +30,29 @@ export function TopBar() {
     }
   }
 
+  const onReset = () => {
+    if (
+      !confirm(
+        'Reset to the PACT demo conveyor? This clears your current chain.',
+      )
+    )
+      return
+    clear()
+    seedDemoConveyor()
+    requestAnimationFrame(() => requestViewReset())
+  }
+
   return (
     <header className="flex h-14 shrink-0 items-center justify-end border-b border-stone-200 bg-white px-4">
       <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onReset}
+          className="inline-flex items-center gap-1.5 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 transition hover:border-stone-400 hover:bg-stone-50"
+        >
+          <RotateCcw className="size-4" />
+          Reset to PACT
+        </button>
         <button
           type="button"
           onClick={onExportExcel}
