@@ -1,6 +1,31 @@
-import { Boxes, FileDown, FileSpreadsheet } from 'lucide-react'
+import { useState } from 'react'
+import { Boxes, FileDown, FileSpreadsheet, Loader2 } from 'lucide-react'
+import { exportConveyorPdf } from '../lib/exportPdf'
+import { exportConveyorExcel } from '../lib/exportExcel'
 
 export function TopBar() {
+  const [pdfBusy, setPdfBusy] = useState(false)
+
+  const onExportPdf = async () => {
+    if (pdfBusy) return
+    setPdfBusy(true)
+    try {
+      await exportConveyorPdf()
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setPdfBusy(false)
+    }
+  }
+
+  const onExportExcel = () => {
+    try {
+      exportConveyorExcel()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-stone-200 bg-white px-4">
       <div className="flex items-center gap-2">
@@ -20,16 +45,23 @@ export function TopBar() {
       <div className="flex items-center gap-2">
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+          onClick={onExportExcel}
+          className="inline-flex items-center gap-1.5 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 transition hover:border-stone-400 hover:bg-stone-50"
         >
           <FileSpreadsheet className="size-4" />
           Excel
         </button>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md bg-stone-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-800"
+          onClick={onExportPdf}
+          disabled={pdfBusy}
+          className="inline-flex items-center gap-1.5 rounded-md bg-stone-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <FileDown className="size-4" />
+          {pdfBusy ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <FileDown className="size-4" />
+          )}
           Export PDF
         </button>
       </div>
