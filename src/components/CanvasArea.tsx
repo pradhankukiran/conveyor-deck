@@ -6,6 +6,7 @@ import type { ModuleKind } from '../modules/types'
 import { ModuleShape } from '../modules/ModuleShape'
 import { MODULES } from '../modules/registry'
 import { computeSnap } from '../lib/snap'
+import { setStageHandle } from '../lib/stageHandle'
 
 const GRID_SPACING = 20
 const GRID_EXTENT = 2500
@@ -53,6 +54,12 @@ export function CanvasArea() {
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+
+  // Publish the stage handle so exports can snapshot it
+  useEffect(() => {
+    setStageHandle(stageRef.current)
+    return () => setStageHandle(null)
+  }, [size.width, size.height])
 
   // Global key handling (space pan, delete, r rotate)
   useEffect(() => {
