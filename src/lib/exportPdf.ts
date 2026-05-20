@@ -47,9 +47,22 @@ function truncate(doc: jsPDF, text: string, maxW: number): string {
 }
 
 export async function exportConveyorPdf(): Promise<void> {
-  const { links, conveyorWidth, drawing } = useStore.getState()
+  const {
+    links,
+    conveyorWidth,
+    drawing,
+    accessoryQuantities,
+    priceOverrides,
+    supportOverrides,
+    titleBlock,
+    legend,
+  } = useStore.getState()
   const geo = computeChainGeometry(links, conveyorWidth)
-  const bom = computeBom(links, conveyorWidth, drawing)
+  const bom = computeBom(links, conveyorWidth, drawing, {
+    accessoryQuantities,
+    priceOverrides,
+    supportOverrides,
+  })
 
   // Tight crop with extra padding to include dimension annotations
   const padded = geo.bounds
@@ -70,6 +83,7 @@ export async function exportConveyorPdf(): Promise<void> {
   const M = 8
   const now = new Date()
   const docTitle = drawing.title.trim() || 'Conveyor layout'
+  const projectName = titleBlock.projectName.trim() || docTitle
   const customerName = drawing.customer.trim() || '—'
   const drawingNo = drawing.drawingNumber.trim() || '—'
 
@@ -119,7 +133,7 @@ export async function exportConveyorPdf(): Promise<void> {
   doc.text(
     truncate(
       doc,
-      `Quote drawing | Customer: ${customerName} | Drawing No: ${drawingNo} | Date: ${dmy(now)}`,
+      `Quote drawing | Project: ${projectName} | Customer: ${customerName} | Drawing No: ${drawingNo} | Date: ${titleBlock.date || dmy(now)}`,
       285,
     ),
     imgX,
@@ -178,8 +192,8 @@ export async function exportConveyorPdf(): Promise<void> {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7)
   doc.setTextColor(80, 80, 80)
-  doc.text('Scale: fit to sheet', legendX + 5, legendY + 48)
-  doc.text('Commercial BOM follows on page 2', legendX + 5, legendY + 54)
+  doc.text(`Scale: ${titleBlock.scale || 'Fit to sheet'}`, legendX + 5, legendY + 48)
+  doc.text(truncate(doc, legend.notes || 'Commercial BOM follows on page 2', legendW - 10), legendX + 5, legendY + 54)
   doc.setTextColor(0, 0, 0)
 
   // ---- Title block (bottom-right) ----
@@ -202,20 +216,20 @@ export async function exportConveyorPdf(): Promise<void> {
 
   const cells: { label: string; value: string }[][] = [
     [
-      { label: 'Drawing Title', value: drawing.title || '—' },
+      { label: 'Project', value: projectName },
       { label: 'Drawing No.', value: drawing.drawingNumber || '—' },
     ],
     [
       { label: 'Customer', value: drawing.customer || '—' },
-      { label: 'Conveyor Width', value: `${conveyorWidth} mm` },
+      { label: 'Revision', value: titleBlock.revision || '—' },
     ],
     [
-      { label: 'Drawn by', value: 'ConveyorDeck' },
+      { label: 'Drawn by', value: titleBlock.drawnBy || 'ConveyorDeck' },
       { label: 'Belt', value: drawing.belt || '—' },
     ],
     [
-      { label: 'Date', value: dmy(now) },
-      { label: 'Motor', value: drawing.motor || '—' },
+      { label: 'Checked by', value: titleBlock.checkedBy || '—' },
+      { label: 'Date', value: titleBlock.date || dmy(now) },
     ],
   ]
 
@@ -245,7 +259,7 @@ export async function exportConveyorPdf(): Promise<void> {
   doc.setFontSize(13)
   doc.setTextColor(0, 0, 0)
   doc.text(
-    'ConveyorDeck',
+    titleBlock.logoText || titleBlock.company || 'ConveyorDeck',
     tbX + col0W + col1W + col2W / 2,
     tbY + tbH / 2 - 2,
     { align: 'center' },

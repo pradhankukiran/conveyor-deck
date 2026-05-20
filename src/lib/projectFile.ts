@@ -6,7 +6,8 @@ const PROJECT_APP = 'conveyor-deck'
 const PROJECT_VERSION = 1
 const DEFAULT_CONVEYOR_WIDTH = 600
 
-const OPTIONAL_STATE_KEY = /^(accessory|accessories|template|templates|admin)/i
+const OPTIONAL_STATE_KEY =
+  /^(accessory|accessories|template|templates|admin|priceOverrides|supportOverrides|titleBlock|legend)/i
 
 const defaultDrawing: DrawingMeta = {
   title: '',

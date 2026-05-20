@@ -20,11 +20,40 @@ export type ViewState = {
   scale: number
 }
 
+export type AccessoryQuantities = Partial<Record<ModuleKind, number>>
+
+export type PriceOverrides = Partial<Record<ModuleKind, number>>
+
+export type SupportOverrides = {
+  legPairs: number | null
+}
+
+export type TitleBlockTemplate = {
+  company: string
+  projectName: string
+  revision: string
+  date: string
+  scale: string
+  pageNumber: string
+  drawnBy: string
+  checkedBy: string
+  logoText: string
+}
+
+export type LegendTemplate = {
+  notes: string
+}
+
 type StoreState = {
   conveyorWidth: number
   links: Link[]
   selectedLinkId: string | null
   drawing: DrawingMeta
+  accessoryQuantities: AccessoryQuantities
+  priceOverrides: PriceOverrides
+  supportOverrides: SupportOverrides
+  titleBlock: TitleBlockTemplate
+  legend: LegendTemplate
   view: ViewState
   viewResetToken: number
   toast: { message: string; id: number } | null
@@ -46,13 +75,24 @@ type StoreState = {
     key: K,
     value: DrawingMeta[K],
   ) => void
+  setAccessoryQuantity: (kind: ModuleKind, qty: number) => void
+  setPriceOverride: (kind: ModuleKind, value: number | null) => void
+  setSupportLegPairs: (value: number | null) => void
+  setTitleBlockField: <K extends keyof TitleBlockTemplate>(
+    key: K,
+    value: TitleBlockTemplate[K],
+  ) => void
+  setLegendField: <K extends keyof LegendTemplate>(
+    key: K,
+    value: LegendTemplate[K],
+  ) => void
 
   setView: (v: Partial<ViewState>) => void
   requestViewReset: () => void
   pushToast: (message: string) => void
   dismissToast: () => void
   clear: () => void
-  replaceState: (s: Partial<Pick<StoreState, 'links' | 'drawing' | 'conveyorWidth'>>) => void
+  replaceState: (s: Partial<Pick<StoreState, 'links' | 'drawing' | 'conveyorWidth' | 'accessoryQuantities' | 'priceOverrides' | 'supportOverrides' | 'titleBlock' | 'legend'>>) => void
 }
 
 let idCounter = 0
@@ -76,6 +116,22 @@ const initialDrawing: DrawingMeta = {
   gearbox: '',
   control: '',
   feedShield: 'no',
+}
+
+const initialTitleBlock: TitleBlockTemplate = {
+  company: '',
+  projectName: '',
+  revision: 'A',
+  date: '',
+  scale: 'Fit to sheet',
+  pageNumber: '1',
+  drawnBy: '',
+  checkedBy: '',
+  logoText: 'Company Logo',
+}
+
+const initialLegend: LegendTemplate = {
+  notes: 'Conveyor belt path; Module/frame outline; Dimension annotation; Auto support locations',
 }
 
 /**
@@ -155,6 +211,11 @@ export const useStore = create<StoreState>()(
   links: [],
   selectedLinkId: null,
   drawing: initialDrawing,
+  accessoryQuantities: {},
+  priceOverrides: {},
+  supportOverrides: { legPairs: null },
+  titleBlock: initialTitleBlock,
+  legend: initialLegend,
   view: { x: 0, y: 0, scale: 1 },
   viewResetToken: 0,
   toast: null,
@@ -239,6 +300,39 @@ export const useStore = create<StoreState>()(
   setDrawingField: (key, value) =>
     set((s) => ({ drawing: { ...s.drawing, [key]: value } })),
 
+  setAccessoryQuantity: (kind, qty) =>
+    set((s) => {
+      const next = { ...s.accessoryQuantities }
+      const clean = Math.max(0, Math.floor(Number.isFinite(qty) ? qty : 0))
+      if (clean === 0) delete next[kind]
+      else next[kind] = clean
+      return { accessoryQuantities: next }
+    }),
+
+  setPriceOverride: (kind, value) =>
+    set((s) => {
+      const next = { ...s.priceOverrides }
+      if (value === null || !Number.isFinite(value) || value < 0) delete next[kind]
+      else next[kind] = value
+      return { priceOverrides: next }
+    }),
+
+  setSupportLegPairs: (value) =>
+    set({
+      supportOverrides: {
+        legPairs:
+          value === null || !Number.isFinite(value)
+            ? null
+            : Math.max(0, Math.floor(value)),
+      },
+    }),
+
+  setTitleBlockField: (key, value) =>
+    set((s) => ({ titleBlock: { ...s.titleBlock, [key]: value } })),
+
+  setLegendField: (key, value) =>
+    set((s) => ({ legend: { ...s.legend, [key]: value } })),
+
   setView: (v) => set((s) => ({ view: { ...s.view, ...v } })),
   requestViewReset: () =>
     set((s) => ({ viewResetToken: s.viewResetToken + 1 })),
@@ -257,6 +351,15 @@ export const useStore = create<StoreState>()(
       ...(s.conveyorWidth !== undefined
         ? { conveyorWidth: s.conveyorWidth }
         : {}),
+      ...(s.accessoryQuantities !== undefined
+        ? { accessoryQuantities: s.accessoryQuantities }
+        : {}),
+      ...(s.priceOverrides !== undefined ? { priceOverrides: s.priceOverrides } : {}),
+      ...(s.supportOverrides !== undefined
+        ? { supportOverrides: s.supportOverrides }
+        : {}),
+      ...(s.titleBlock !== undefined ? { titleBlock: s.titleBlock } : {}),
+      ...(s.legend !== undefined ? { legend: s.legend } : {}),
     })),
     }),
     {
@@ -267,6 +370,11 @@ export const useStore = create<StoreState>()(
         conveyorWidth: s.conveyorWidth,
         links: s.links,
         drawing: s.drawing,
+        accessoryQuantities: s.accessoryQuantities,
+        priceOverrides: s.priceOverrides,
+        supportOverrides: s.supportOverrides,
+        titleBlock: s.titleBlock,
+        legend: s.legend,
       }),
       onRehydrateStorage: () => (state) => {
         if (state?.links) bumpIdCounterFor(state.links)

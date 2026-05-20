@@ -1,4 +1,5 @@
 import type { Link } from '../modules/types'
+import type { ModuleKind } from '../modules/types'
 import { MODULES, modulePrice } from '../modules/registry'
 import { computeChainGeometry } from './chainGeometry'
 
@@ -27,6 +28,14 @@ export type Bom = {
   legCount: number
 }
 
+export type BomOptions = {
+  accessoryQuantities?: Partial<Record<ModuleKind, number>>
+  priceOverrides?: Partial<Record<ModuleKind, number>>
+  supportOverrides?: {
+    legPairs?: number | null
+  }
+}
+
 const CHAIN_PRICE_PER_M = 145 // AUD/m for the modular belt chain
 const FRAME_PRICE_PER_M = 95 // AUD/m for aluminium frame extrusion
 const LEG_BASE_PRICE = 95 // AUD per vertical leg 40×40
@@ -45,6 +54,7 @@ export function computeBom(
     control?: string
     feedShield?: 'yes' | 'no'
   } = {},
+  options: BomOptions = {},
 ): Bom {
   const geo = computeChainGeometry(links, conveyorWidthMm)
 
@@ -56,12 +66,15 @@ export function computeBom(
     subtotal += row.lineTotal
   }
 
+  const unitPriceFor = (kind: ModuleKind) =>
+    options.priceOverrides?.[kind] ?? modulePrice(kind, conveyorWidthMm)
+
   // 1. Belt modules (counted per kind)
   const counts = new Map<Link['kind'], number>()
   for (const l of links) counts.set(l.kind, (counts.get(l.kind) ?? 0) + 1)
   for (const [kind, qty] of counts) {
     const def = MODULES[kind]
-    const unitPrice = modulePrice(kind, conveyorWidthMm)
+    const unitPrice = unitPriceFor(kind)
     push({
       key: `mod-${kind}`,
       label: def.shortLabel,
@@ -104,7 +117,8 @@ export function computeBom(
 
   // 4. Legs — every LEG_SPAN_MM, pair (two legs per support).
   //    For a non-empty chain we always have one set at each end too.
-  const legPairs = links.length > 0 ? Math.max(2, Math.ceil(pathM)) : 0
+  const autoLegPairs = links.length > 0 ? Math.max(2, Math.ceil(pathM)) : 0
+  const legPairs = options.supportOverrides?.legPairs ?? autoLegPairs
   const legCount = legPairs * 2
   if (legCount > 0) {
     push({
@@ -141,7 +155,25 @@ export function computeBom(
     }
   }
 
-  // 5. Controls
+  // 5. Manual accessory/configuration items. These are sales/BOM options
+  // managed from the properties panel rather than placed in the chain.
+  for (const [kind, rawQty] of Object.entries(options.accessoryQuantities ?? {})) {
+    const def = MODULES[kind as ModuleKind]
+    const qty = Math.max(0, Math.floor(rawQty ?? 0))
+    if (!def || qty === 0) continue
+    const unitPrice = unitPriceFor(kind as ModuleKind)
+    push({
+      key: `acc-${kind}`,
+      label: def.shortLabel,
+      detail: def.group,
+      qty,
+      unit: 'ea',
+      unitPrice,
+      lineTotal: unitPrice * qty,
+    })
+  }
+
+  // 6. Controls
   if (drawing.control === 'VSD + E-stop') {
     push({
       key: 'vsd',
@@ -161,7 +193,7 @@ export function computeBom(
     })
   }
 
-  // 6. Feed shield (if a feed exists and shield is selected)
+  // 7. Feed shield (if a feed exists and shield is selected)
   const hasFeed = links.some((l) => MODULES[l.kind].role === 'feed')
   if (hasFeed && drawing.feedShield === 'yes') {
     const shieldPrice =

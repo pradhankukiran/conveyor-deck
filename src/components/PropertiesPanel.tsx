@@ -2,8 +2,9 @@ import { useMemo } from 'react'
 import { ArrowUp, ArrowDown, ChevronUp, ChevronDown, Trash2 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import type { DrawingMeta } from '../lib/store'
-import { getModule } from '../modules/registry'
+import { MODULES, MODULE_ORDER, getModule, modulePrice } from '../modules/registry'
 import { computeBom, formatAud, formatMm } from '../lib/bom'
+import { getCompatibilityWarnings } from '../lib/rules'
 
 const WIDTH_OPTIONS: number[] = Array.from(
   { length: (1200 - 100) / 50 + 1 },
@@ -19,6 +20,9 @@ const BELT_OPTIONS = [
 const MOTOR_OPTIONS = ['0.18 kW 3PH', '0.37 kW 3PH', '0.75 kW 3PH', '1.5 kW 3PH']
 const GEARBOX_OPTIONS = ['20:1', '30:1', '40:1', '60:1']
 const CONTROL_OPTIONS = ['DOL starter', 'VSD + E-stop', 'PLC integrated']
+const ACCESSORY_KINDS = MODULE_ORDER.filter(
+  (kind) => MODULES[kind].role === 'accessory',
+)
 
 export function PropertiesPanel() {
   const title = useStore((s) => s.drawing.title)
@@ -40,11 +44,42 @@ export function PropertiesPanel() {
   const moveLink = useStore((s) => s.moveLink)
   const setLinkVariant = useStore((s) => s.setLinkVariant)
   const selectLink = useStore((s) => s.selectLink)
+  const accessoryQuantities = useStore((s) => s.accessoryQuantities)
+  const setAccessoryQuantity = useStore((s) => s.setAccessoryQuantity)
+  const priceOverrides = useStore((s) => s.priceOverrides)
+  const setPriceOverride = useStore((s) => s.setPriceOverride)
+  const supportOverrides = useStore((s) => s.supportOverrides)
+  const setSupportLegPairs = useStore((s) => s.setSupportLegPairs)
+  const titleBlock = useStore((s) => s.titleBlock)
+  const setTitleBlockField = useStore((s) => s.setTitleBlockField)
+  const legend = useStore((s) => s.legend)
+  const setLegendField = useStore((s) => s.setLegendField)
 
   const drawing = useStore((s) => s.drawing)
   const bom = useMemo(
-    () => computeBom(links, conveyorWidth, drawing),
-    [links, conveyorWidth, drawing],
+    () =>
+      computeBom(links, conveyorWidth, drawing, {
+        accessoryQuantities,
+        priceOverrides,
+        supportOverrides,
+      }),
+    [
+      links,
+      conveyorWidth,
+      drawing,
+      accessoryQuantities,
+      priceOverrides,
+      supportOverrides,
+    ],
+  )
+  const warnings = useMemo(
+    () =>
+      getCompatibilityWarnings({
+        drawing,
+        conveyorWidthMm: conveyorWidth,
+        links,
+      }),
+    [drawing, conveyorWidth, links],
   )
 
   const handleDrawingChange =
@@ -166,6 +201,21 @@ export function PropertiesPanel() {
           </fieldset>
         </Section>
 
+        {warnings.length > 0 && (
+          <Section title="Rules check">
+            <ul className="space-y-1">
+              {warnings.map((warning) => (
+                <li
+                  key={warning.code}
+                  className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900"
+                >
+                  {warning.message}
+                </li>
+              ))}
+            </ul>
+          </Section>
+        )}
+
         <Section title="Chain order">
           {links.length === 0 ? (
             <p className="text-xs text-stone-500">
@@ -259,6 +309,133 @@ export function PropertiesPanel() {
             label="Belt area"
             value={`${bom.beltAreaM2.toFixed(2)} m²`}
           />
+        </Section>
+
+        <Section title="Accessories & supports">
+          <NumberField
+            label="Support pairs override"
+            value={supportOverrides.legPairs ?? ''}
+            placeholder={`Auto (${Math.ceil(bom.legCount / 2)} pairs)`}
+            onChange={(value) => setSupportLegPairs(value)}
+            min={0}
+          />
+          <div className="space-y-1">
+            {ACCESSORY_KINDS.map((kind) => {
+              const def = MODULES[kind]
+              const qty = accessoryQuantities[kind] ?? 0
+              return (
+                <div
+                  key={kind}
+                  className="grid grid-cols-[1fr_4.5rem] items-center gap-2 text-xs"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-stone-800">
+                      {def.shortLabel}
+                    </div>
+                    <div className="truncate text-[10px] text-stone-500">
+                      {def.description}
+                    </div>
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={qty}
+                    onChange={(e) =>
+                      setAccessoryQuantity(kind, Number(e.target.value))
+                    }
+                    className="rounded border border-stone-300 bg-white px-2 py-1 text-right text-sm text-stone-900 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                  />
+                </div>
+              )
+            })}
+          </div>
+        </Section>
+
+        <Section title="Title block & legend">
+          <TextField
+            label="Company"
+            value={titleBlock.company}
+            placeholder="Company name"
+            onChange={(e) => setTitleBlockField('company', e.target.value)}
+          />
+          <TextField
+            label="Project"
+            value={titleBlock.projectName}
+            placeholder="Project name"
+            onChange={(e) => setTitleBlockField('projectName', e.target.value)}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <TextField
+              label="Revision"
+              value={titleBlock.revision}
+              onChange={(e) => setTitleBlockField('revision', e.target.value)}
+            />
+            <TextField
+              label="Scale"
+              value={titleBlock.scale}
+              onChange={(e) => setTitleBlockField('scale', e.target.value)}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <TextField
+              label="Drawn by"
+              value={titleBlock.drawnBy}
+              onChange={(e) => setTitleBlockField('drawnBy', e.target.value)}
+            />
+            <TextField
+              label="Checked by"
+              value={titleBlock.checkedBy}
+              onChange={(e) => setTitleBlockField('checkedBy', e.target.value)}
+            />
+          </div>
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-stone-600">Legend notes</span>
+            <textarea
+              value={legend.notes}
+              onChange={(e) => setLegendField('notes', e.target.value)}
+              rows={3}
+              className="resize-none rounded border border-stone-300 bg-white px-2 py-1.5 text-sm text-stone-900 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+            />
+          </label>
+        </Section>
+
+        <Section title="Admin pricing">
+          <div className="space-y-1">
+            {MODULE_ORDER.map((kind) => {
+              const def = MODULES[kind]
+              const calculated = modulePrice(kind, conveyorWidth)
+              return (
+                <div
+                  key={kind}
+                  className="grid grid-cols-[1fr_5.5rem] items-center gap-2 text-xs"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-stone-800">
+                      {def.shortLabel}
+                    </div>
+                    <div className="truncate text-[10px] text-stone-500">
+                      Default {formatAud(calculated)}
+                    </div>
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    placeholder="Auto"
+                    value={priceOverrides[kind] ?? ''}
+                    onChange={(e) =>
+                      setPriceOverride(
+                        kind,
+                        e.target.value === '' ? null : Number(e.target.value),
+                      )
+                    }
+                    className="rounded border border-stone-300 bg-white px-2 py-1 text-right text-sm text-stone-900 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                  />
+                </div>
+              )
+            })}
+          </div>
         </Section>
 
         <Section title="Bill of materials">
@@ -386,6 +563,37 @@ function SelectField({
       >
         {children}
       </select>
+    </label>
+  )
+}
+
+function NumberField({
+  label,
+  value,
+  placeholder,
+  onChange,
+  min,
+}: {
+  label: string
+  value: number | ''
+  placeholder?: string
+  onChange: (value: number | null) => void
+  min?: number
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-xs">
+      <span className="text-stone-600">{label}</span>
+      <input
+        type="number"
+        value={value}
+        placeholder={placeholder}
+        min={min}
+        step={1}
+        onChange={(e) =>
+          onChange(e.target.value === '' ? null : Number(e.target.value))
+        }
+        className="rounded border border-stone-300 bg-white px-2 py-1.5 text-sm text-stone-900 placeholder:text-stone-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+      />
     </label>
   )
 }

@@ -16,8 +16,19 @@ function ymdDash(d: Date): string {
 }
 
 export function exportConveyorExcel(): void {
-  const { links, conveyorWidth, drawing } = useStore.getState()
-  const bom = computeBom(links, conveyorWidth, drawing)
+  const {
+    links,
+    conveyorWidth,
+    drawing,
+    accessoryQuantities,
+    priceOverrides,
+    supportOverrides,
+  } = useStore.getState()
+  const bom = computeBom(links, conveyorWidth, drawing, {
+    accessoryQuantities,
+    priceOverrides,
+    supportOverrides,
+  })
   const today = new Date()
 
   // --- BOM sheet ---
