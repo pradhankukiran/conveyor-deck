@@ -32,4 +32,35 @@ describe('computeBom', () => {
     )
     expect(bom.subtotal).toBeGreaterThan(0)
   })
+
+  it('includes manual accessories, price overrides, and support overrides', () => {
+    const links: Link[] = [
+      { id: 'L1', kind: 'feed', variant: 'horizontal' },
+      { id: 'L2', kind: 'drive', variant: 'horizontal' },
+    ]
+
+    const bom = computeBom(links, 600, {}, {
+      accessoryQuantities: {
+        'top-enclosure': 2,
+      },
+      priceOverrides: {
+        'top-enclosure': 123,
+      },
+      supportOverrides: {
+        legPairs: 3,
+      },
+    })
+
+    expect(bom.legCount).toBe(6)
+    expect(bom.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: 'acc-top-enclosure',
+          qty: 2,
+          unitPrice: 123,
+          lineTotal: 246,
+        }),
+      ]),
+    )
+  })
 })

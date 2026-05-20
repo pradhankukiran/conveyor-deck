@@ -4,6 +4,7 @@ import { useStore } from './store'
 import { snapshotStage } from './stageHandle'
 import { computeBom, formatAud, formatMm } from './bom'
 import { computeChainGeometry } from './chainGeometry'
+import { MODULES } from '../modules/registry'
 
 function ymd(d: Date): string {
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
@@ -44,6 +45,79 @@ function truncate(doc: jsPDF, text: string, maxW: number): string {
     else hi = mid - 1
   }
   return text.slice(0, lo) + '…'
+}
+
+function drawGeneratedTopView(
+  doc: jsPDF,
+  geo: ReturnType<typeof computeChainGeometry>,
+  conveyorWidth: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) {
+  doc.setLineWidth(0.3)
+  doc.setDrawColor(120, 120, 120)
+  doc.rect(x, y, w, h)
+  doc.setDrawColor(0, 0, 0)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(7)
+  doc.text('TOP VIEW - GENERATED', x + 2, y + 5)
+
+  if (!geo.bounds || geo.links.length === 0) {
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(9)
+    doc.setTextColor(140, 140, 140)
+    doc.text('No conveyor placed', x + w / 2, y + h / 2, { align: 'center' })
+    doc.setTextColor(0, 0, 0)
+    return
+  }
+
+  const pad = 7
+  const stripY = y + h / 2 - 4
+  const stripH = 8
+  const minX = geo.bounds.x
+  const scale = (w - pad * 2) / Math.max(1, geo.footprintLengthMm)
+  const toX = (worldX: number) => x + pad + (worldX - minX) * scale
+
+  doc.rect(x + pad, stripY, w - pad * 2, stripH)
+  doc.setLineWidth(0.2)
+  doc.line(x + pad, stripY + stripH / 2, x + w - pad, stripY + stripH / 2)
+
+  for (const link of geo.links) {
+    const xs = link.corners.map((corner) => corner.x)
+    const x0 = toX(Math.min(...xs))
+    const x1 = toX(Math.max(...xs))
+    const def = MODULES[link.kind]
+    if (def.role === 'angle') {
+      doc.setLineDashPattern([1.5, 1], 0)
+      doc.line(x0, stripY - 3, x0, stripY + stripH + 3)
+      doc.line(x1, stripY - 3, x1, stripY + stripH + 3)
+      doc.setLineDashPattern([], 0)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(5.5)
+      doc.text(`${def.bendDeg ?? ''}°`, (x0 + x1) / 2, stripY - 1, {
+        align: 'center',
+      })
+    } else if (def.role === 'feed') {
+      doc.setFillColor(245, 245, 245)
+      doc.rect(x0 + 0.5, stripY + 1, Math.max(1, x1 - x0 - 1), stripH - 2, 'F')
+    } else if (def.role === 'drive') {
+      doc.setFillColor(30, 30, 30)
+      doc.rect(x1 - 2, stripY + 0.5, 2, stripH - 1, 'F')
+    }
+  }
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(6)
+  doc.setTextColor(80, 80, 80)
+  doc.text(
+    `${Math.round(geo.footprintLengthMm)} mm x ${conveyorWidth} mm`,
+    x + w - 2,
+    y + h - 2,
+    { align: 'right' },
+  )
+  doc.setTextColor(0, 0, 0)
 }
 
 export async function exportConveyorPdf(): Promise<void> {
@@ -195,6 +269,8 @@ export async function exportConveyorPdf(): Promise<void> {
   doc.text(`Scale: ${titleBlock.scale || 'Fit to sheet'}`, legendX + 5, legendY + 48)
   doc.text(truncate(doc, legend.notes || 'Commercial BOM follows on page 2', legendW - 10), legendX + 5, legendY + 54)
   doc.setTextColor(0, 0, 0)
+
+  drawGeneratedTopView(doc, geo, conveyorWidth, summaryX, legendY + legendH + 8, summaryW, 38)
 
   // ---- Title block (bottom-right) ----
   const tbW = 200
