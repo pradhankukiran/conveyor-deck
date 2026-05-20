@@ -1,10 +1,16 @@
 export type ModuleKind =
   | 'feed'
+  | 'feed-low-profile'
+  | 'straight-300'
   | 'straight-short'
+  | 'straight-900'
+  | 'straight-1200'
   | 'straight-long'
+  | 'straight-2400'
   | 'angle-30'
   | 'angle-45'
   | 'drive'
+  | 'drive-compact'
 
 export type LinkVariant = 'horizontal' | 'incline-up' | 'incline-down'
 
