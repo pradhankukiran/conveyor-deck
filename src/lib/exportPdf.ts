@@ -68,10 +68,119 @@ export async function exportConveyorPdf(): Promise<void> {
   const pageW = 420
   const pageH = 297
   const M = 8
+  const now = new Date()
+  const docTitle = drawing.title.trim() || 'Conveyor layout'
+  const customerName = drawing.customer.trim() || '—'
+  const drawingNo = drawing.drawingNumber.trim() || '—'
 
   doc.setLineWidth(0.6)
   doc.setDrawColor(0, 0, 0)
   doc.rect(M, M, pageW - M * 2, pageH - M * 2)
+
+  const drawPanelHeader = (x: number, y: number, w: number, title: string) => {
+    doc.setFillColor(235, 235, 235)
+    doc.setDrawColor(0, 0, 0)
+    doc.rect(x, y, w, 7, 'FD')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7)
+    doc.setTextColor(0, 0, 0)
+    doc.text(title, x + 2.5, y + 4.8)
+  }
+
+  const drawQuoteRow = (
+    x: number,
+    y: number,
+    label: string,
+    value: string,
+    valueW: number,
+  ) => {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6.5)
+    doc.setTextColor(80, 80, 80)
+    doc.text(label.toUpperCase(), x, y)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8)
+    doc.setTextColor(0, 0, 0)
+    doc.text(truncate(doc, value, valueW), x + 30, y)
+  }
+
+  // ---- Quotation title and summary ----
+  const imgX = M + 12
+  const imgY = M + 24
+  const imgW = 290
+  const imgH = 158
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(15)
+  doc.setTextColor(0, 0, 0)
+  doc.text(truncate(doc, docTitle, 230), imgX, M + 8)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(65, 65, 65)
+  doc.text(
+    truncate(
+      doc,
+      `Quote drawing | Customer: ${customerName} | Drawing No: ${drawingNo} | Date: ${dmy(now)}`,
+      285,
+    ),
+    imgX,
+    M + 14,
+  )
+  doc.setTextColor(0, 0, 0)
+
+  const summaryX = imgX + imgW + 10
+  const summaryY = M + 12
+  const summaryW = pageW - M - summaryX - 8
+  const summaryH = 88
+  doc.setLineWidth(0.35)
+  doc.rect(summaryX, summaryY, summaryW, summaryH)
+  drawPanelHeader(summaryX, summaryY, summaryW, 'QUOTATION SUMMARY')
+  const summaryRows: { label: string; value: string }[] = [
+    { label: 'Customer', value: customerName },
+    { label: 'Drawing No.', value: drawingNo },
+    { label: 'Footprint', value: formatMm(bom.footprintLengthMm) },
+    { label: 'Height', value: formatMm(bom.heightMm) },
+    { label: 'Belt path', value: formatMm(bom.beltLengthMm) },
+    { label: 'Width', value: `${conveyorWidth} mm` },
+    { label: 'Feed shield', value: drawing.feedShield === 'yes' ? 'Included' : 'Not included' },
+    { label: 'BOM total', value: formatAud(bom.subtotal) },
+  ]
+  summaryRows.forEach((row, i) => {
+    drawQuoteRow(summaryX + 4, summaryY + 15 + i * 8.5, row.label, row.value, summaryW - 36)
+  })
+
+  const legendX = summaryX
+  const legendY = summaryY + summaryH + 8
+  const legendW = summaryW
+  const legendH = 58
+  doc.setLineWidth(0.35)
+  doc.rect(legendX, legendY, legendW, legendH)
+  drawPanelHeader(legendX, legendY, legendW, 'DRAWING LEGEND')
+
+  const drawLegendLine = (
+    y: number,
+    label: string,
+    width: number,
+    shade: number,
+  ) => {
+    doc.setDrawColor(shade, shade, shade)
+    doc.setLineWidth(width)
+    doc.line(legendX + 5, y, legendX + 22, y)
+    doc.setDrawColor(0, 0, 0)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    doc.setTextColor(0, 0, 0)
+    doc.text(label, legendX + 26, y + 2)
+  }
+
+  drawLegendLine(legendY + 16, 'Conveyor belt path', 1.1, 0)
+  drawLegendLine(legendY + 26, 'Module / frame outline', 0.45, 0)
+  drawLegendLine(legendY + 36, 'Dimension annotation', 0.3, 120)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7)
+  doc.setTextColor(80, 80, 80)
+  doc.text('Scale: fit to sheet', legendX + 5, legendY + 48)
+  doc.text('Commercial BOM follows on page 2', legendX + 5, legendY + 54)
+  doc.setTextColor(0, 0, 0)
 
   // ---- Title block (bottom-right) ----
   const tbW = 200
@@ -91,7 +200,6 @@ export async function exportConveyorPdf(): Promise<void> {
   doc.line(tbX + col0W, tbY, tbX + col0W, tbY + tbH)
   doc.line(tbX + col0W + col1W, tbY, tbX + col0W + col1W, tbY + tbH)
 
-  const now = new Date()
   const cells: { label: string; value: string }[][] = [
     [
       { label: 'Drawing Title', value: drawing.title || '—' },
@@ -204,10 +312,6 @@ export async function exportConveyorPdf(): Promise<void> {
   })
 
   // ---- Drawing image area ----
-  const imgX = M + 12
-  const imgY = M + 12
-  const imgW = 290
-  const imgH = 170
   doc.setLineWidth(0.3)
   doc.setDrawColor(120, 120, 120)
   doc.rect(imgX, imgY, imgW, imgH)
@@ -235,11 +339,15 @@ export async function exportConveyorPdf(): Promise<void> {
 
   // Header strip with key dimensions printed in a row above the drawing
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
+  doc.setFontSize(9)
   doc.text(
-    `Footprint: ${formatMm(bom.footprintLengthMm)}    Height: ${formatMm(bom.heightMm)}    Belt: ${formatMm(bom.beltLengthMm)}    Width: ${conveyorWidth} mm`,
+    truncate(
+      doc,
+      `Footprint: ${formatMm(bom.footprintLengthMm)}    Height: ${formatMm(bom.heightMm)}    Belt: ${formatMm(bom.beltLengthMm)}    Width: ${conveyorWidth} mm`,
+      285,
+    ),
     imgX,
-    M + 8,
+    M + 20,
   )
 
   // ---- Page 2: BOM ----
