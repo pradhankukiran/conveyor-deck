@@ -8,7 +8,7 @@ const PAPER = '#ffffff'
 const HATCH = '#737373'
 const MOTOR_FILL = '#1f1f1f'
 const SELECTED = '#ea580c'
-const SELECTED_FILL = '#ea580c1a'
+const SELECTED_FILL = '#ea580c33'
 
 const OUTLINE_WEIGHT = 1.4
 const DETAIL_WEIGHT = 0.6
@@ -33,9 +33,14 @@ export function ModuleShape({ geom, selected, onSelect }: Props) {
   const outline = flatten(geom.corners)
   const isAngle = def.role === 'angle'
 
+  const handleSelect = (e: { cancelBubble: boolean }) => {
+    e.cancelBubble = true
+    onSelect()
+  }
+
   return (
-    <Group onClick={onSelect} onTap={onSelect} onMouseDown={onSelect}>
-      {/* Outline polygon — drawn in world coords from the geometry */}
+    <Group>
+      {/* Outline polygon — owns the click target for this module */}
       <Line
         points={outline}
         closed
@@ -43,6 +48,9 @@ export function ModuleShape({ geom, selected, onSelect }: Props) {
         stroke={INK}
         strokeWidth={OUTLINE_WEIGHT}
         strokeScaleEnabled={false}
+        onClick={handleSelect}
+        onTap={handleSelect}
+        onMouseDown={handleSelect}
       />
 
       {/* Belt centerline — the chord */}
@@ -98,10 +106,13 @@ export function ModuleShape({ geom, selected, onSelect }: Props) {
           closed
           fill={SELECTED_FILL}
           stroke={SELECTED}
-          strokeWidth={2}
-          dash={[6, 4]}
+          strokeWidth={3}
+          dash={[10, 6]}
           strokeScaleEnabled={false}
           listening={false}
+          shadowColor={SELECTED}
+          shadowBlur={8}
+          shadowOpacity={0.6}
         />
       )}
     </Group>

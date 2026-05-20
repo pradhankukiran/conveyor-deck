@@ -257,15 +257,14 @@ export const useStore = create<StoreState>()(
     })),
     }),
     {
-      name: 'conveyordeck.v1',
+      name: 'conveyordeck.v2',
+      version: 2,
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({
         conveyorWidth: s.conveyorWidth,
         links: s.links,
         drawing: s.drawing,
       }),
-      // Toast field is transient, not persisted
-      // (already excluded by partialize)
       onRehydrateStorage: () => (state) => {
         if (state?.links) bumpIdCounterFor(state.links)
       },
