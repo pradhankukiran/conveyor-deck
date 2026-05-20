@@ -77,6 +77,6 @@ export function exportConveyorExcel(): void {
   XLSX.utils.book_append_sheet(wb, wsSpecs, 'Specs')
 
   const baseName = drawing.drawingNumber?.trim() || 'conveyor'
-  const safe = baseName.replace(/[^a-zA-Z0-9_\-]+/g, '-')
+  const safe = baseName.replace(/[^a-zA-Z0-9_-]+/g, '-')
   XLSX.writeFile(wb, `${safe}-${ymd(today)}.xlsx`)
 }

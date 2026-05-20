@@ -309,6 +309,6 @@ export async function exportConveyorPdf(): Promise<void> {
   })
 
   const baseName = drawing.drawingNumber?.trim() || 'conveyor'
-  const safe = baseName.replace(/[^a-zA-Z0-9_\-]+/g, '-')
+  const safe = baseName.replace(/[^a-zA-Z0-9_-]+/g, '-')
   doc.save(`${safe}-${ymd(now)}.pdf`)
 }

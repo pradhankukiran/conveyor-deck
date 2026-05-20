@@ -69,22 +69,25 @@ export function CanvasArea() {
 
   useEffect(() => {
     if (size.width === 0 || size.height === 0) return
-    const bounds = geom.bounds
-    if (!bounds) {
-      setStageScale(1)
-      setStagePos({ x: size.width / 2, y: size.height / 2 })
-      return
-    }
-    // Pad to leave room for dimension lines outside the modules
-    const padded = {
-      x: bounds.x - 250,
-      y: bounds.y - 250,
-      width: bounds.width + 500,
-      height: bounds.height + 500,
-    }
-    const fit = fitBoundsToViewport(padded, size, { padding: 40, maxScale: 0.6 })
-    setStageScale(fit.scale)
-    setStagePos({ x: fit.x, y: fit.y })
+    const id = requestAnimationFrame(() => {
+      const bounds = geom.bounds
+      if (!bounds) {
+        setStageScale(1)
+        setStagePos({ x: size.width / 2, y: size.height / 2 })
+        return
+      }
+      // Pad to leave room for dimension lines outside the modules
+      const padded = {
+        x: bounds.x - 250,
+        y: bounds.y - 250,
+        width: bounds.width + 500,
+        height: bounds.height + 500,
+      }
+      const fit = fitBoundsToViewport(padded, size, { padding: 40, maxScale: 0.6 })
+      setStageScale(fit.scale)
+      setStagePos({ x: fit.x, y: fit.y })
+    })
+    return () => cancelAnimationFrame(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewResetToken, size.width, size.height])
 
