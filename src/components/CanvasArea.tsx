@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Layer, Line, Stage } from 'react-konva'
 import type Konva from 'konva'
+import { MODULE_DRAG_TYPE, useStore } from '../lib/store'
+import type { ModuleKind } from '../modules/types'
+import { ModuleShape } from '../modules/ModuleShape'
+import { MODULES } from '../modules/registry'
 
 const GRID_SPACING = 20
 const GRID_EXTENT = 2500
@@ -22,6 +26,16 @@ export function CanvasArea() {
   const [spaceDown, setSpaceDown] = useState(false)
   const [middleDown, setMiddleDown] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const [dropHover, setDropHover] = useState(false)
+
+  const modules = useStore((s) => s.modules)
+  const conveyorWidth = useStore((s) => s.conveyorWidth)
+  const selectedModuleId = useStore((s) => s.selectedModuleId)
+  const addModule = useStore((s) => s.addModule)
+  const updateModulePosition = useStore((s) => s.updateModulePosition)
+  const selectModule = useStore((s) => s.selectModule)
+  const removeSelected = useStore((s) => s.removeSelected)
+  const rotateModule = useStore((s) => s.rotateModule)
 
   // Track parent size with ResizeObserver
   useEffect(() => {
@@ -35,7 +49,7 @@ export function CanvasArea() {
     return () => ro.disconnect()
   }, [])
 
-  // Spacebar pan mode (ignore when typing in inputs)
+  // Global key handling (space pan, delete, r rotate)
   useEffect(() => {
     const isEditable = (target: EventTarget | null) => {
       if (!(target instanceof HTMLElement)) return false
@@ -48,9 +62,22 @@ export function CanvasArea() {
       )
     }
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !e.repeat && !isEditable(e.target)) {
+      if (isEditable(e.target)) return
+      if (e.code === 'Space' && !e.repeat) {
         e.preventDefault()
         setSpaceDown(true)
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedModuleId) {
+          e.preventDefault()
+          removeSelected()
+        }
+      } else if (e.key === 'r' || e.key === 'R') {
+        if (selectedModuleId) {
+          e.preventDefault()
+          rotateModule(selectedModuleId, e.shiftKey ? -15 : 15)
+        }
+      } else if (e.key === 'Escape') {
+        selectModule(null)
       }
     }
     const onKeyUp = (e: KeyboardEvent) => {
@@ -62,7 +89,7 @@ export function CanvasArea() {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
     }
-  }, [])
+  }, [selectedModuleId, removeSelected, rotateModule, selectModule])
 
   // If the mouse leaves the window while MMB is held, release the pan latch.
   useEffect(() => {
@@ -76,8 +103,6 @@ export function CanvasArea() {
 
   const panEnabled = spaceDown || middleDown
 
-  // Build grid lines once. Lines live in world coords; Konva applies the stage
-  // transform, so the geometry is scale-independent.
   const gridLines = useMemo<GridLine[]>(() => {
     const lines: GridLine[] = []
     for (let x = -GRID_EXTENT; x <= GRID_EXTENT; x += GRID_SPACING) {
@@ -129,7 +154,6 @@ export function CanvasArea() {
   }, [])
 
   const syncStagePos = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
-    // Only the Stage itself should drive the camera position
     if (e.target === stageRef.current) {
       const pos = e.target.position()
       setStagePos({ x: pos.x, y: pos.y })
@@ -149,11 +173,65 @@ export function CanvasArea() {
     setStagePos({ x: 0, y: 0 })
   }, [])
 
+  // HTML5 drop: receive a module kind from the palette and place it
+  const onWrapperDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (e.dataTransfer.types.includes(MODULE_DRAG_TYPE)) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+      setDropHover(true)
+    }
+  }, [])
+
+  const onWrapperDragLeave = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      if (e.currentTarget === e.target) setDropHover(false)
+    },
+    [],
+  )
+
+  const onWrapperDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      setDropHover(false)
+      const kind = e.dataTransfer.getData(MODULE_DRAG_TYPE) as ModuleKind
+      if (!kind || !MODULES[kind]) return
+      const rect = wrapperRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const screenX = e.clientX - rect.left
+      const screenY = e.clientY - rect.top
+      const worldX = (screenX - stagePos.x) / stageScale
+      const worldY = (screenY - stagePos.y) / stageScale
+      const def = MODULES[kind]
+      const w = def.matchesConveyorWidth
+        ? conveyorWidth
+        : (def.fixedWidth ?? 100)
+      // Center the module on the drop point
+      addModule(kind, worldX - def.length / 2, worldY - w / 2)
+    },
+    [addModule, conveyorWidth, stagePos.x, stagePos.y, stageScale],
+  )
+
+  // Click on empty area deselects
+  const handleStageMouseDown = useCallback(
+    (e: Konva.KonvaEventObject<MouseEvent>) => {
+      handleMouseDown(e)
+      if (e.target === stageRef.current) selectModule(null)
+    },
+    [handleMouseDown, selectModule],
+  )
+
   const cursor = panEnabled ? (isDragging ? 'grabbing' : 'grab') : 'default'
 
   return (
     <main className="relative flex-1 overflow-hidden bg-stone-50">
-      <div ref={wrapperRef} className="absolute inset-0" style={{ cursor }}>
+      <div
+        ref={wrapperRef}
+        className="absolute inset-0"
+        style={{ cursor }}
+        onDragOver={onWrapperDragOver}
+        onDragLeave={onWrapperDragLeave}
+        onDrop={onWrapperDrop}
+      >
         {size.width > 0 && size.height > 0 && (
           <Stage
             ref={stageRef}
@@ -165,7 +243,7 @@ export function CanvasArea() {
             scaleY={stageScale}
             draggable={panEnabled}
             onWheel={handleWheel}
-            onMouseDown={handleMouseDown}
+            onMouseDown={handleStageMouseDown}
             onMouseUp={handleMouseUp}
             onDragStart={() => setIsDragging(true)}
             onDragMove={syncStagePos}
@@ -185,9 +263,27 @@ export function CanvasArea() {
                 />
               ))}
             </Layer>
+
+            <Layer>
+              {modules.map((m) => (
+                <ModuleShape
+                  key={m.id}
+                  instance={m}
+                  conveyorWidth={conveyorWidth}
+                  selected={m.id === selectedModuleId}
+                  onSelect={() => selectModule(m.id)}
+                  onDragMove={(x, y) => updateModulePosition(m.id, x, y)}
+                  onDragEnd={(x, y) => updateModulePosition(m.id, x, y)}
+                />
+              ))}
+            </Layer>
           </Stage>
         )}
       </div>
+
+      {dropHover && (
+        <div className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-orange-400/60" />
+      )}
 
       <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-2">
         <span className="pointer-events-auto rounded-md bg-white/80 px-2 py-1 text-xs font-medium text-stone-600 ring-1 ring-stone-200 backdrop-blur">
@@ -201,6 +297,25 @@ export function CanvasArea() {
           Reset view
         </button>
       </div>
+
+      <div className="pointer-events-none absolute bottom-3 right-3 flex items-center gap-2 text-[11px] text-stone-500">
+        <Hint label="Drag" detail="from palette" />
+        <Hint label="Space" detail="pan" />
+        <Hint label="Wheel" detail="zoom" />
+        <Hint label="R" detail="rotate 15°" />
+        <Hint label="Del" detail="remove" />
+      </div>
     </main>
+  )
+}
+
+function Hint({ label, detail }: { label: string; detail: string }) {
+  return (
+    <span className="pointer-events-auto rounded-md bg-white/80 px-2 py-1 ring-1 ring-stone-200 backdrop-blur">
+      <kbd className="font-mono text-[10px] font-semibold text-stone-700">
+        {label}
+      </kbd>
+      <span className="ml-1 text-stone-500">{detail}</span>
+    </span>
   )
 }
