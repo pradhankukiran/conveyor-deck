@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Group, Layer, Line, Path, Stage, Text } from 'react-konva'
+import type { DragEvent as ReactDragEvent } from 'react'
+import { Circle, Group, Layer, Line, Path, Stage, Text } from 'react-konva'
 import type Konva from 'konva'
-import { useStore } from '../lib/store'
+import { MODULE_DRAG_TYPE, canInsertAt, useStore } from '../lib/store'
 import { ModuleShape } from '../modules/ModuleShape'
 import { AutoLegs } from '../modules/AutoLegs'
 import { computeChainGeometry } from '../lib/chainGeometry'
+import type { ChainGeometry, Pt } from '../lib/chainGeometry'
 import { redo, undo } from '../lib/history'
 import { TopViewInset } from './TopViewInset'
 import { setStageHandle } from '../lib/stageHandle'
 import { fitBoundsToViewport } from '../lib/bounds'
+import { MODULE_ORDER } from '../modules/registry'
+import type { ModuleKind } from '../modules/types'
 
 const GRID_SPACING = 100 // mm; coarse engineering grid
 const GRID_MINOR = 20
@@ -22,6 +26,10 @@ const DIM = '#525252'
 const DIM_ACCENT = '#0a0a0a'
 
 type GridLine = { points: number[]; major: boolean }
+type DropTarget = { index: number; point: Pt; heading: number }
+type DropPreview = DropTarget & { kind: ModuleKind }
+
+const MODULE_KIND_SET = new Set<ModuleKind>(MODULE_ORDER)
 
 export function CanvasArea() {
   const wrapperRef = useRef<HTMLDivElement | null>(null)
@@ -33,12 +41,16 @@ export function CanvasArea() {
   const [spaceDown, setSpaceDown] = useState(false)
   const [middleDown, setMiddleDown] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const [dropPreview, setDropPreview] = useState<DropPreview | null>(null)
+  const [dragRejected, setDragRejected] = useState(false)
 
   const links = useStore((s) => s.links)
   const conveyorWidth = useStore((s) => s.conveyorWidth)
   const selectedLinkId = useStore((s) => s.selectedLinkId)
   const selectLink = useStore((s) => s.selectLink)
   const removeSelected = useStore((s) => s.removeSelected)
+  const insertLink = useStore((s) => s.insertLink)
+  const pushToast = useStore((s) => s.pushToast)
   const viewResetToken = useStore((s) => s.viewResetToken)
   const setStoreView = useStore((s) => s.setView)
 
@@ -227,11 +239,83 @@ export function CanvasArea() {
     useStore.getState().requestViewReset()
   }, [])
 
+  const getDropTarget = useCallback(
+    (clientX: number, clientY: number, kind: ModuleKind): DropTarget | null => {
+      const el = wrapperRef.current
+      if (!el) return null
+      const rect = el.getBoundingClientRect()
+      const pointer = {
+        x: (clientX - rect.left - stagePos.x) / stageScale,
+        y: (clientY - rect.top - stagePos.y) / stageScale,
+      }
+      let nearest: DropTarget | null = null
+      let nearestDistance = Number.POSITIVE_INFINITY
+      for (let index = 0; index <= links.length; index++) {
+        if (!canInsertAt(links, kind, index).ok) continue
+        const slot = getInsertionSlot(geom, index)
+        const distance = squaredDistance(pointer, slot.point)
+        if (distance < nearestDistance) {
+          nearest = { index, ...slot }
+          nearestDistance = distance
+        }
+      }
+      return nearest
+    },
+    [geom, links, stagePos.x, stagePos.y, stageScale],
+  )
+
+  const handleNativeDragOver = useCallback(
+    (e: ReactDragEvent<HTMLDivElement>) => {
+      const kind = getDraggedModuleKind(e.dataTransfer)
+      if (!kind) return
+      e.preventDefault()
+      const target = getDropTarget(e.clientX, e.clientY, kind)
+      e.dataTransfer.dropEffect = target ? 'copy' : 'none'
+      setDropPreview(target ? { ...target, kind } : null)
+      setDragRejected(!target)
+    },
+    [getDropTarget],
+  )
+
+  const handleNativeDrop = useCallback(
+    (e: ReactDragEvent<HTMLDivElement>) => {
+      const kind = getDraggedModuleKind(e.dataTransfer)
+      if (!kind) return
+      e.preventDefault()
+      const target = getDropTarget(e.clientX, e.clientY, kind)
+      setDropPreview(null)
+      setDragRejected(false)
+      if (!target) {
+        pushToast('No valid position for that module')
+        return
+      }
+      insertLink(kind, target.index)
+    },
+    [getDropTarget, insertLink, pushToast],
+  )
+
+  const handleNativeDragLeave = useCallback(
+    (e: ReactDragEvent<HTMLDivElement>) => {
+      const next = e.relatedTarget
+      if (next instanceof Node && e.currentTarget.contains(next)) return
+      setDropPreview(null)
+      setDragRejected(false)
+    },
+    [],
+  )
+
   const cursor = panEnabled ? (isDragging ? 'grabbing' : 'grab') : 'default'
 
   return (
     <main className="relative flex-1 overflow-hidden bg-white">
-      <div ref={wrapperRef} className="absolute inset-0" style={{ cursor }}>
+      <div
+        ref={wrapperRef}
+        className="absolute inset-0"
+        style={{ cursor }}
+        onDragOver={handleNativeDragOver}
+        onDrop={handleNativeDrop}
+        onDragLeave={handleNativeDragLeave}
+      >
         {size.width > 0 && size.height > 0 && (
           <Stage
             ref={stageRef}
@@ -280,6 +364,14 @@ export function CanvasArea() {
                   beltLengthMm={geom.pathLengthMm}
                 />
               )}
+              {dropPreview && (
+                <DropMarker
+                  point={dropPreview.point}
+                  heading={dropPreview.heading}
+                  width={conveyorWidth}
+                  scale={stageScale}
+                />
+              )}
             </Layer>
           </Stage>
         )}
@@ -287,6 +379,14 @@ export function CanvasArea() {
 
       <ChainEmptyState empty={links.length === 0} />
       <TopViewInset />
+
+      {(dropPreview || dragRejected) && (
+        <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-md bg-white/90 px-3 py-1.5 text-xs font-medium text-stone-700 ring-1 ring-stone-200 backdrop-blur">
+          {dropPreview
+            ? 'Release to place module'
+            : 'No valid spot for this module'}
+        </div>
+      )}
 
       <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-2">
         <span className="pointer-events-auto rounded-md bg-white/80 px-2 py-1 text-xs font-medium text-stone-600 ring-1 ring-stone-200 backdrop-blur">
@@ -308,6 +408,89 @@ export function CanvasArea() {
         <Hint label="Del" detail="remove" />
       </div>
     </main>
+  )
+}
+
+function getDraggedModuleKind(dataTransfer: DataTransfer): ModuleKind | null {
+  const fromPayload = dataTransfer.getData(MODULE_DRAG_TYPE)
+  if (isModuleKind(fromPayload)) return fromPayload
+
+  const typedPrefix = `${MODULE_DRAG_TYPE}:`
+  const fromType = Array.from(dataTransfer.types).find((type) =>
+    type.startsWith(typedPrefix),
+  )
+  const kind = fromType?.slice(typedPrefix.length)
+  return isModuleKind(kind) ? kind : null
+}
+
+function isModuleKind(value: string | undefined): value is ModuleKind {
+  return !!value && MODULE_KIND_SET.has(value as ModuleKind)
+}
+
+function getInsertionSlot(geom: ChainGeometry, index: number): {
+  point: Pt
+  heading: number
+} {
+  if (geom.links.length === 0) {
+    return { point: geom.endCenter, heading: geom.endHeading }
+  }
+  if (index <= 0) {
+    const first = geom.links[0]!
+    return { point: first.centerEntry, heading: first.entryHeading }
+  }
+  if (index >= geom.links.length) {
+    return { point: geom.endCenter, heading: geom.endHeading }
+  }
+  const before = geom.links[index - 1]!
+  return { point: before.centerExit, heading: before.exitHeading }
+}
+
+function squaredDistance(a: Pt, b: Pt): number {
+  const dx = a.x - b.x
+  const dy = a.y - b.y
+  return dx * dx + dy * dy
+}
+
+function DropMarker({
+  point,
+  heading,
+  width,
+  scale,
+}: {
+  point: Pt
+  heading: number
+  width: number
+  scale: number
+}) {
+  const radians = (heading * Math.PI) / 180
+  const half = Math.max(width / 2 + 70, 160)
+  const nx = Math.sin(radians)
+  const ny = -Math.cos(radians)
+  const radius = 9 / scale
+  return (
+    <Group listening={false}>
+      <Line
+        points={[
+          point.x - nx * half,
+          point.y - ny * half,
+          point.x + nx * half,
+          point.y + ny * half,
+        ]}
+        stroke="#16a34a"
+        strokeWidth={3}
+        strokeScaleEnabled={false}
+        dash={[10, 6]}
+      />
+      <Circle
+        x={point.x}
+        y={point.y}
+        radius={radius}
+        fill="#16a34a"
+        stroke="#ffffff"
+        strokeWidth={2}
+        strokeScaleEnabled={false}
+      />
+    </Group>
   )
 }
 

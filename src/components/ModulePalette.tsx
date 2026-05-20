@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { MODULE_ORDER, getModule } from '../modules/registry'
-import { canInsertAt, useStore } from '../lib/store'
+import { MODULE_DRAG_TYPE, canInsertAt, useStore } from '../lib/store'
 import type { ModuleKind } from '../modules/types'
 
 export function ModulePalette() {
@@ -14,20 +14,26 @@ export function ModulePalette() {
           Component Library
         </h2>
         <p className="mt-0.5 text-[10px] text-stone-500">
-          Click to add to chain end
+          Drag to canvas or click to add to end
         </p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
         <ul className="space-y-0.5">
           {MODULE_ORDER.map((k) => {
-            const result = canInsertAt(links, k, links.length)
+            const appendResult = canInsertAt(links, k, links.length)
+            const canDrag = Array.from({ length: links.length + 1 }).some(
+              (_, index) => canInsertAt(links, k, index).ok,
+            )
             return (
               <PaletteItem
                 key={k}
                 kind={k}
-                disabled={!result.ok}
-                disabledReason={result.reason}
+                appendDisabled={!appendResult.ok}
+                dragDisabled={!canDrag}
+                disabledReason={
+                  canDrag ? appendResult.reason : 'No valid position available'
+                }
                 onAdd={() => addLink(k)}
               />
             )
@@ -47,26 +53,43 @@ export function ModulePalette() {
 
 function PaletteItem({
   kind,
-  disabled,
+  appendDisabled,
+  dragDisabled,
   disabledReason,
   onAdd,
 }: {
   kind: ModuleKind
-  disabled: boolean
+  appendDisabled: boolean
+  dragDisabled: boolean
   disabledReason?: string
   onAdd: () => void
 }) {
   const def = getModule(kind)
   const [showTip, setShowTip] = useState(false)
+  const disabled = appendDisabled && dragDisabled
+
+  const handleDragStart = (e: React.DragEvent<HTMLButtonElement>) => {
+    if (dragDisabled) {
+      e.preventDefault()
+      return
+    }
+    e.dataTransfer.effectAllowed = 'copy'
+    e.dataTransfer.setData(MODULE_DRAG_TYPE, kind)
+    e.dataTransfer.setData(`${MODULE_DRAG_TYPE}:${kind}`, kind)
+    e.dataTransfer.setData('text/plain', def.label)
+  }
+
   return (
     <li className="relative">
       <button
         type="button"
         disabled={disabled}
+        draggable={!dragDisabled}
+        onDragStart={handleDragStart}
         onClick={onAdd}
-        onMouseEnter={() => disabled && setShowTip(true)}
+        onMouseEnter={() => (appendDisabled || dragDisabled) && setShowTip(true)}
         onMouseLeave={() => setShowTip(false)}
-        className="group flex w-full items-center gap-2.5 rounded border border-transparent px-1.5 py-1.5 text-left transition hover:border-stone-300 hover:bg-white disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-transparent disabled:hover:bg-transparent"
+        className="group flex w-full cursor-grab items-center gap-2.5 rounded border border-transparent px-1.5 py-1.5 text-left transition hover:border-stone-300 hover:bg-white active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-transparent disabled:hover:bg-transparent"
       >
         <ModuleThumb kind={kind} />
         <div className="min-w-0 flex-1 leading-tight">
@@ -77,13 +100,13 @@ function PaletteItem({
             {def.description}
           </div>
         </div>
-        {!disabled && (
+        {!appendDisabled && (
           <span className="text-[10px] font-semibold text-orange-500 opacity-0 transition group-hover:opacity-100">
             ADD
           </span>
         )}
       </button>
-      {disabled && showTip && disabledReason && (
+      {(appendDisabled || dragDisabled) && showTip && disabledReason && (
         <div className="absolute left-full top-1/2 z-10 ml-2 -translate-y-1/2 whitespace-nowrap rounded bg-stone-900 px-2 py-1 text-[10px] text-white shadow-lg">
           {disabledReason}
         </div>
