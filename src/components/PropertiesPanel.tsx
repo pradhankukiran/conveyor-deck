@@ -1,7 +1,9 @@
+import { useMemo } from 'react'
 import { RotateCcw, RotateCw, Trash2 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import type { DrawingMeta } from '../lib/store'
-import { getModule, MODULES } from '../modules/registry'
+import { getModule } from '../modules/registry'
+import { computeBom, formatAud } from '../lib/bom'
 
 const WIDTH_OPTIONS: number[] = Array.from(
   { length: (1200 - 100) / 50 + 1 },
@@ -44,6 +46,11 @@ export function PropertiesPanel() {
     ? modules.find((m) => m.id === selectedModuleId) ?? null
     : null
   const selectedDef = selected ? getModule(selected.kind) : null
+
+  const bom = useMemo(
+    () => computeBom(modules, conveyorWidth),
+    [modules, conveyorWidth],
+  )
 
   const handleDrawingChange =
     <K extends keyof DrawingMeta>(key: K) =>
@@ -199,18 +206,41 @@ export function PropertiesPanel() {
         )}
 
         <Section title="Bill of Materials">
-          {modules.length === 0 ? (
+          {bom.rows.length === 0 ? (
             <p className="text-xs text-stone-500">
               BOM will populate from placed modules.
             </p>
           ) : (
-            <ul className="space-y-1 text-xs text-stone-700">
-              {modules.map((m) => (
-                <li key={m.id} className="flex items-center justify-between">
-                  <span>{MODULES[m.kind].shortLabel}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="-mx-1 overflow-hidden rounded border border-stone-200">
+              <table className="w-full text-[11px] tabular-nums">
+                <thead className="bg-stone-50 text-stone-500">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left font-medium">Item</th>
+                    <th className="px-2 py-1.5 text-right font-medium">Qty</th>
+                    <th className="px-2 py-1.5 text-right font-medium">
+                      Unit
+                    </th>
+                    <th className="px-2 py-1.5 text-right font-medium">
+                      Total
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100">
+                  {bom.rows.map((r) => (
+                    <tr key={r.kind} className="text-stone-700">
+                      <td className="px-2 py-1.5">{r.label}</td>
+                      <td className="px-2 py-1.5 text-right">{r.qty}</td>
+                      <td className="px-2 py-1.5 text-right text-stone-500">
+                        {formatAud(r.unitPrice)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-medium">
+                        {formatAud(r.lineTotal)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </Section>
       </div>
@@ -221,8 +251,11 @@ export function PropertiesPanel() {
             Total
           </span>
           <span className="text-lg font-semibold tabular-nums text-stone-900">
-            $0.00
+            {formatAud(bom.total)}
           </span>
+        </div>
+        <div className="mt-0.5 text-[10px] text-stone-500">
+          Indicative pricing for {conveyorWidth} mm wide conveyor.
         </div>
       </div>
     </aside>
