@@ -3,6 +3,7 @@ import { Group, Layer, Line, Path, Stage, Text } from 'react-konva'
 import type Konva from 'konva'
 import { useStore } from '../lib/store'
 import { ModuleShape } from '../modules/ModuleShape'
+import { AutoLegs } from '../modules/AutoLegs'
 import { computeChainGeometry } from '../lib/chainGeometry'
 import { setStageHandle } from '../lib/stageHandle'
 import { fitBoundsToViewport } from '../lib/bounds'
@@ -243,6 +244,7 @@ export function CanvasArea() {
             </Layer>
 
             <Layer>
+              <AutoLegs geo={geom} />
               {geom.links.map((g) => (
                 <ModuleShape
                   key={g.id}

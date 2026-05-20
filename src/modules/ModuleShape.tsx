@@ -1,5 +1,5 @@
-import { Group, Rect, Line, Circle, Text, Arc } from 'react-konva'
-import type { LinkGeometry } from '../lib/chainGeometry'
+import { Group, Line, Rect, Circle, Text, Arc } from 'react-konva'
+import type { LinkGeometry, Pt } from '../lib/chainGeometry'
 import { MODULES } from './registry'
 
 const INK = '#0a0a0a'
@@ -8,7 +8,7 @@ const PAPER = '#ffffff'
 const HATCH = '#737373'
 const MOTOR_FILL = '#1f1f1f'
 const SELECTED = '#ea580c'
-const HOVER = '#ea580c33'
+const SELECTED_FILL = '#ea580c1a'
 
 const OUTLINE_WEIGHT = 1.4
 const DETAIL_WEIGHT = 0.6
@@ -20,94 +20,130 @@ type Props = {
   onSelect: () => void
 }
 
+function flatten(pts: Pt[]): number[] {
+  const out: number[] = []
+  for (const p of pts) {
+    out.push(p.x, p.y)
+  }
+  return out
+}
+
 export function ModuleShape({ geom, selected, onSelect }: Props) {
   const def = MODULES[geom.kind]
-  const { length, width } = geom
+  const outline = flatten(geom.corners)
+  const isAngle = def.role === 'angle'
 
   return (
-    <Group
-      x={geom.x}
-      y={geom.y}
-      rotation={geom.heading}
-      onClick={onSelect}
-      onTap={onSelect}
-      onMouseDown={onSelect}
-    >
-      {def.visual === 'feed' && <FeedShape length={length} width={width} />}
-      {def.visual === 'plain' && <StraightShape length={length} width={width} />}
-      {def.visual === 'angle-30' && (
-        <AngleShape length={length} width={width} angle={30} variant={geom.variant} />
+    <Group onClick={onSelect} onTap={onSelect} onMouseDown={onSelect}>
+      {/* Outline polygon — drawn in world coords from the geometry */}
+      <Line
+        points={outline}
+        closed
+        fill={PAPER}
+        stroke={INK}
+        strokeWidth={OUTLINE_WEIGHT}
+        strokeScaleEnabled={false}
+      />
+
+      {/* Belt centerline — the chord */}
+      <Line
+        points={[
+          geom.centerEntry.x,
+          geom.centerEntry.y,
+          geom.centerExit.x,
+          geom.centerExit.y,
+        ]}
+        stroke={INK_DIM}
+        strokeWidth={DIM_WEIGHT}
+        dash={[18, 4, 3, 4]}
+        strokeScaleEnabled={false}
+        listening={false}
+      />
+
+      {/* Belt rails — two parallel offset lines on either side of the chord */}
+      <RailPair geom={geom} inset={12} />
+
+      {/* Module-specific interior detail. For non-angle modules we use a
+          rotated local frame so the detail lines up with the rectangular
+          outline. Angle modules use world-coord annotations because their
+          outline is a trapezoid that doesn't match a single local rotation. */}
+      {!isAngle && (
+        <Group
+          x={geom.centerEntry.x}
+          y={geom.centerEntry.y}
+          rotation={geom.chordHeading}
+        >
+          {def.visual === 'plain' && (
+            <ChainPattern length={geom.length} width={geom.width} />
+          )}
+          {def.visual === 'feed' && (
+            <FeedInterior length={geom.length} width={geom.width} />
+          )}
+          {def.visual === 'drive' && (
+            <DriveInterior length={geom.length} width={geom.width} />
+          )}
+        </Group>
       )}
-      {def.visual === 'angle-45' && (
-        <AngleShape length={length} width={width} angle={45} variant={geom.variant} />
+
+      {isAngle && (
+        <AngleInterior
+          geom={geom}
+          bendDeg={def.bendDeg ?? 0}
+        />
       )}
-      {def.visual === 'drive' && <DriveShape length={length} width={width} />}
 
       {selected && (
-        <Rect
-          x={-4}
-          y={-4}
-          width={length + 8}
-          height={width + 8}
+        <Line
+          points={outline}
+          closed
+          fill={SELECTED_FILL}
           stroke={SELECTED}
-          strokeWidth={1.4}
+          strokeWidth={2}
           dash={[6, 4]}
-          fill={HOVER}
-          listening={false}
           strokeScaleEnabled={false}
+          listening={false}
         />
       )}
     </Group>
   )
 }
 
-function ModuleBody({
-  length,
-  width,
-  fill = PAPER,
+function RailPair({
+  geom,
+  inset,
 }: {
-  length: number
-  width: number
-  fill?: string
+  geom: LinkGeometry
+  inset: number
 }) {
+  // The rails run from a point inset from entryAbove toward exitAbove, and
+  // similarly on the below side. We interpolate from corner to corner.
+  const [entryAbove, exitAbove, exitBelow, entryBelow] = geom.corners
+  const aboveStart = interpolate(entryAbove, entryBelow, inset / geom.width)
+  const aboveEnd = interpolate(exitAbove, exitBelow, inset / geom.width)
+  const belowStart = interpolate(entryBelow, entryAbove, inset / geom.width)
+  const belowEnd = interpolate(exitBelow, exitAbove, inset / geom.width)
   return (
     <>
-      <Rect
-        x={0}
-        y={0}
-        width={length}
-        height={width}
-        fill={fill}
-        stroke={INK}
-        strokeWidth={OUTLINE_WEIGHT}
-        strokeScaleEnabled={false}
-      />
-      {/* Upper and lower belt rails — represent the frame edges */}
       <Line
-        points={[0, 12, length, 12]}
+        points={[aboveStart.x, aboveStart.y, aboveEnd.x, aboveEnd.y]}
         stroke={INK}
         strokeWidth={DETAIL_WEIGHT}
         strokeScaleEnabled={false}
         listening={false}
       />
       <Line
-        points={[0, width - 12, length, width - 12]}
+        points={[belowStart.x, belowStart.y, belowEnd.x, belowEnd.y]}
         stroke={INK}
         strokeWidth={DETAIL_WEIGHT}
-        strokeScaleEnabled={false}
-        listening={false}
-      />
-      {/* Belt centerline */}
-      <Line
-        points={[0, width / 2, length, width / 2]}
-        stroke={INK_DIM}
-        strokeWidth={DIM_WEIGHT}
-        dash={[14, 3, 2, 3]}
         strokeScaleEnabled={false}
         listening={false}
       />
     </>
   )
+}
+
+function interpolate(a: Pt, b: Pt, t: number): Pt {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
 }
 
 function ChainPattern({
@@ -128,7 +164,7 @@ function ChainPattern({
       {xs.map((x) => (
         <Line
           key={x}
-          points={[x, inset, x, width - inset]}
+          points={[x, -width / 2 + inset, x, width / 2 - inset]}
           stroke={INK_DIM}
           strokeWidth={DETAIL_WEIGHT}
           strokeScaleEnabled={false}
@@ -139,21 +175,11 @@ function ChainPattern({
   )
 }
 
-function StraightShape({ length, width }: { length: number; width: number }) {
-  return (
-    <>
-      <ModuleBody length={length} width={width} />
-      <ChainPattern length={length} width={width} />
-    </>
-  )
-}
-
-function FeedShape({ length, width }: { length: number; width: number }) {
-  const hopX = 50
-  const hopY = 18
-  const hopW = length - hopX - 30
-  const hopH = width - hopY * 2
-  // hatch the hopper window
+function FeedInterior({ length, width }: { length: number; width: number }) {
+  const hopX = 70
+  const hopY = -width / 2 + 18
+  const hopW = length - hopX - 40
+  const hopH = width - 36
   const hatchSpacing = 9
   const hatch: number[][] = []
   for (let off = -hopH; off < hopW; off += hatchSpacing) {
@@ -165,7 +191,6 @@ function FeedShape({ length, width }: { length: number; width: number }) {
   }
   return (
     <>
-      <ModuleBody length={length} width={width} />
       <Rect
         x={hopX}
         y={hopY}
@@ -187,8 +212,8 @@ function FeedShape({ length, width }: { length: number; width: number }) {
         />
       ))}
       <Text
-        x={6}
-        y={6}
+        x={8}
+        y={-width / 2 + 6}
         text="FEED"
         fontFamily="ui-monospace, Menlo, Consolas, monospace"
         fontSize={11}
@@ -200,70 +225,15 @@ function FeedShape({ length, width }: { length: number; width: number }) {
   )
 }
 
-function AngleShape({
-  length,
-  width,
-  angle,
-  variant,
-}: {
-  length: number
-  width: number
-  angle: number
-  variant: LinkGeometry['variant']
-}) {
-  // Variant 'incline-down' (positive heading change) flips the arc, 'incline-up' keeps it.
-  const signedAngle = variant === 'incline-down' ? angle : -angle
-  const cx = length / 2
-  const cy = width / 2
-  return (
-    <>
-      <ModuleBody length={length} width={width} />
-      {/* arc indicating the change of direction */}
-      <Arc
-        x={cx}
-        y={cy}
-        innerRadius={width * 0.18}
-        outerRadius={width * 0.22}
-        angle={Math.abs(signedAngle)}
-        rotation={signedAngle < 0 ? -Math.abs(signedAngle) : 0}
-        fill={INK}
-        listening={false}
-      />
-      <Text
-        x={cx - 14}
-        y={cy + width * 0.24}
-        text={`${angle}°`}
-        fontFamily="ui-monospace, Menlo, Consolas, monospace"
-        fontSize={12}
-        fontStyle="700"
-        fill={INK}
-        listening={false}
-      />
-      <Text
-        x={6}
-        y={6}
-        text={`BEND ${variant === 'incline-down' ? 'DN' : 'UP'}`}
-        fontFamily="ui-monospace, Menlo, Consolas, monospace"
-        fontSize={10}
-        fontStyle="600"
-        fill={INK}
-        listening={false}
-      />
-    </>
-  )
-}
-
-function DriveShape({ length, width }: { length: number; width: number }) {
+function DriveInterior({ length, width }: { length: number; width: number }) {
   const motorW = 160
   const motorH = 75
   const pulleyR = Math.min(22, width * 0.18)
   return (
     <>
-      <ModuleBody length={length} width={width} />
-      {/* Drive pulley shaft (side view = circle at the head) */}
       <Circle
         x={length - 18}
-        y={width / 2}
+        y={0}
         radius={pulleyR}
         fill={PAPER}
         stroke={INK}
@@ -273,15 +243,14 @@ function DriveShape({ length, width }: { length: number; width: number }) {
       />
       <Circle
         x={length - 18}
-        y={width / 2}
+        y={0}
         radius={3}
         fill={INK}
         listening={false}
       />
-      {/* Motor + gearbox housing, hanging off the drive end */}
       <Rect
         x={length - motorW + 30}
-        y={width + 6}
+        y={width / 2 + 6}
         width={motorW - 30}
         height={motorH}
         fill={MOTOR_FILL}
@@ -290,15 +259,14 @@ function DriveShape({ length, width }: { length: number; width: number }) {
         strokeScaleEnabled={false}
         listening={false}
       />
-      {/* Cooling fins */}
       {Array.from({ length: 6 }, (_, i) => i + 1).map((i) => (
         <Line
           key={i}
           points={[
             length - motorW + 30 + (i * (motorW - 30)) / 7,
-            width + 6,
+            width / 2 + 6,
             length - motorW + 30 + (i * (motorW - 30)) / 7,
-            width + 6 + motorH,
+            width / 2 + 6 + motorH,
           ]}
           stroke={INK_DIM}
           strokeWidth={DIM_WEIGHT}
@@ -306,16 +274,15 @@ function DriveShape({ length, width }: { length: number; width: number }) {
           listening={false}
         />
       ))}
-      {/* Output shaft cone */}
       <Line
-        points={[length - 18, width, length - motorW + 30, width + 12]}
+        points={[length - 18, width / 2, length - motorW + 30, width / 2 + 12]}
         stroke={INK}
         strokeWidth={DETAIL_WEIGHT}
         strokeScaleEnabled={false}
         listening={false}
       />
       <Line
-        points={[length - 18, width, length - motorW + 30, width - 4]}
+        points={[length - 18, width / 2, length - motorW + 30, width / 2 - 4]}
         stroke={INK}
         strokeWidth={DETAIL_WEIGHT}
         strokeScaleEnabled={false}
@@ -323,12 +290,63 @@ function DriveShape({ length, width }: { length: number; width: number }) {
       />
       <Text
         x={length - motorW + 40}
-        y={width + motorH * 0.5 - 8}
+        y={width / 2 + motorH * 0.4}
         text="M"
         fontFamily="ui-monospace, Menlo, Consolas, monospace"
         fontSize={20}
         fontStyle="700"
         fill="#ffffff"
+        listening={false}
+      />
+    </>
+  )
+}
+
+function AngleInterior({
+  geom,
+  bendDeg,
+}: {
+  geom: LinkGeometry
+  bendDeg: number
+}) {
+  // Center of the trapezoid: midpoint of the chord
+  const cx = (geom.centerEntry.x + geom.centerExit.x) / 2
+  const cy = (geom.centerEntry.y + geom.centerExit.y) / 2
+  const dirLabel = geom.variant === 'incline-down' ? 'DN' : 'UP'
+  // Determine arc rotation: visualise the entry → exit sweep around the
+  // chord midpoint. Just show a small wedge for direction cue.
+  const arcStart = geom.variant === 'incline-down' ? -bendDeg / 2 : -90
+  return (
+    <>
+      <Arc
+        x={cx}
+        y={cy}
+        innerRadius={geom.width * 0.18}
+        outerRadius={geom.width * 0.22}
+        angle={bendDeg}
+        rotation={arcStart}
+        fill={INK}
+        listening={false}
+      />
+      <Text
+        x={cx - 14}
+        y={cy + geom.width * 0.26}
+        text={`${bendDeg}°`}
+        fontFamily="ui-monospace, Menlo, Consolas, monospace"
+        fontSize={12}
+        fontStyle="700"
+        fill={INK}
+        listening={false}
+      />
+      <Text
+        x={geom.corners[0].x + 8}
+        y={geom.corners[0].y + 6}
+        text={`BEND ${dirLabel}`}
+        fontFamily="ui-monospace, Menlo, Consolas, monospace"
+        fontSize={10}
+        fontStyle="600"
+        fill={INK}
+        rotation={geom.chordHeading}
         listening={false}
       />
     </>

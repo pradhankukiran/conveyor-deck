@@ -1,50 +1,71 @@
 import type { Link } from '../modules/types'
 import { MODULES } from '../modules/registry'
 
+export type Pt = { x: number; y: number }
+
 export type LinkGeometry = {
   id: string
   kind: Link['kind']
   variant: Link['variant']
-  /** World coords (mm) of the entry corner of the belt (top-left when heading=0). */
-  x: number
-  y: number
-  /** Direction the belt is travelling at this link, degrees (0 = east, +CCW). */
-  heading: number
+  /** 4 corners in world coords, order: entry-above, exit-above, exit-below, entry-below. */
+  corners: [Pt, Pt, Pt, Pt]
+  /** Belt centerline endpoints in world coords. For angle modules this is the chord. */
+  centerEntry: Pt
+  centerExit: Pt
+  /** Belt heading at entry / exit, degrees (0 = east, screen y-down). */
+  entryHeading: number
+  exitHeading: number
+  /** Direction of the chord (same as entryHeading for straights). */
+  chordHeading: number
   length: number
   width: number
 }
 
 export type ChainGeometry = {
   links: LinkGeometry[]
-  /** Coordinates the chain heads to after the last link (chain end). */
-  endX: number
-  endY: number
-  /** Heading at chain end. */
+  /** Cursor centerline position at the chain end. */
+  endCenter: Pt
   endHeading: number
-  /** Axis-aligned bounding box of all link rectangles. */
+  /** Axis-aligned bounding box covering all link corners. */
   bounds: { x: number; y: number; width: number; height: number } | null
-  /** Total path length walked along the belt (sum of link lengths). */
+  /** Sum of link nominal lengths along their chords (mm). */
   pathLengthMm: number
-  /** Overall footprint length (max projected x extent). */
+  /** Footprint width along the chain (max x − min x). */
   footprintLengthMm: number
-  /** Overall height extent (max y span). */
+  /** Footprint height (max y − min y). */
   heightMm: number
 }
 
 /**
- * Walks the chain from a fixed start position, accumulating each link's
- * geometry. Angle modules apply their bend (positive = up = decreasing y
- * in screen coords) AFTER their own segment has been drawn.
+ * "Above" the belt direction H is the perpendicular at heading H - 90°.
+ * In screen coords (y down), with H=0 (east), above = (0, -1) i.e. up the page.
+ */
+function perpAbove(headingDeg: number, distance: number): Pt {
+  const r = (headingDeg * Math.PI) / 180
+  return { x: distance * Math.sin(r), y: -distance * Math.cos(r) }
+}
+
+function add(a: Pt, b: Pt): Pt {
+  return { x: a.x + b.x, y: a.y + b.y }
+}
+function sub(a: Pt, b: Pt): Pt {
+  return { x: a.x - b.x, y: a.y - b.y }
+}
+
+/**
+ * Walks the chain from origin. Each link's corner polygon meets its
+ * neighbour's edge-to-edge because both edges sit at the same world heading
+ * (the exit heading of N == entry heading of N+1).
  *
- * Screen convention: x → right (east), y → down. So "incline up" means
- * the heading rotates by -angle (CCW), pointing the cursor up-right.
+ * For an angle module: the module body becomes a trapezoid. Its entry edge
+ * is perpendicular to the entry heading; its exit edge is perpendicular to
+ * the exit heading. The belt centerline lies along the chord.
  */
 export function computeChainGeometry(
   links: Link[],
   conveyorWidth: number,
 ): ChainGeometry {
-  let x = 0
-  let y = 0
+  let center: Pt = { x: 0, y: 0 }
   let heading = 0
 
   let minX = Number.POSITIVE_INFINITY
@@ -57,68 +78,114 @@ export function computeChainGeometry(
 
   for (const link of links) {
     const def = MODULES[link.kind]
-    const len = def.length
-    const wid = def.matchesConveyorWidth ? conveyorWidth : 100
+    const L = def.length
+    const W = def.matchesConveyorWidth ? conveyorWidth : 100
+
+    let chordHeading = heading
+    let exitHeading = heading
+
+    if (def.role === 'angle') {
+      const sign = link.variant === 'incline-up' ? -1 : 1
+      const bend = def.bendDeg ?? 0
+      chordHeading = heading + (sign * bend) / 2
+      exitHeading = heading + sign * bend
+    }
+
+    const cr = (chordHeading * Math.PI) / 180
+    const exitCenter: Pt = {
+      x: center.x + L * Math.cos(cr),
+      y: center.y + L * Math.sin(cr),
+    }
+
+    // Entry edge: perpendicular to entry heading
+    const halfWAbove = perpAbove(heading, W / 2)
+    const entryAbove = add(center, halfWAbove)
+    const entryBelow = sub(center, halfWAbove)
+
+    // Exit edge: perpendicular to exit heading
+    const halfWAboveExit = perpAbove(exitHeading, W / 2)
+    const exitAbove = add(exitCenter, halfWAboveExit)
+    const exitBelow = sub(exitCenter, halfWAboveExit)
+
+    const corners: [Pt, Pt, Pt, Pt] = [
+      entryAbove,
+      exitAbove,
+      exitBelow,
+      entryBelow,
+    ]
+
+    for (const p of corners) {
+      if (p.x < minX) minX = p.x
+      if (p.x > maxX) maxX = p.x
+      if (p.y < minY) minY = p.y
+      if (p.y > maxY) maxY = p.y
+    }
 
     out.push({
       id: link.id,
       kind: link.kind,
       variant: link.variant,
-      x,
-      y,
-      heading,
-      length: len,
-      width: wid,
+      corners,
+      centerEntry: center,
+      centerExit: exitCenter,
+      entryHeading: heading,
+      exitHeading,
+      chordHeading,
+      length: L,
+      width: W,
     })
 
-    // Track AABB by rotating the four corners around (x, y).
-    const rad = (heading * Math.PI) / 180
-    const cos = Math.cos(rad)
-    const sin = Math.sin(rad)
-    const corners: Array<[number, number]> = [
-      [0, 0],
-      [len, 0],
-      [len, wid],
-      [0, wid],
-    ]
-    for (const [cx, cy] of corners) {
-      const wx = x + cx * cos - cy * sin
-      const wy = y + cx * sin + cy * cos
-      if (wx < minX) minX = wx
-      if (wy < minY) minY = wy
-      if (wx > maxX) maxX = wx
-      if (wy > maxY) maxY = wy
-    }
-
-    // Advance cursor along the heading by the link's length.
-    x += len * cos
-    y += len * sin
-    pathLen += len
-
-    // If this is an angle module, apply its bend AFTER walking through it.
-    if (link.kind === 'angle-30' || link.kind === 'angle-45') {
-      const bend = def.bendDeg ?? 0
-      if (link.variant === 'incline-up') heading -= bend
-      else if (link.variant === 'incline-down') heading += bend
-    }
+    pathLen += L
+    center = exitCenter
+    heading = exitHeading
   }
 
   return {
     links: out,
-    endX: x,
-    endY: y,
+    endCenter: center,
     endHeading: heading,
     bounds:
       out.length === 0
         ? null
-        : {
-            x: minX,
-            y: minY,
-            width: maxX - minX,
-            height: maxY - minY,
-          },
+        : { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
     pathLengthMm: pathLen,
     footprintLengthMm: out.length === 0 ? 0 : maxX - minX,
     heightMm: out.length === 0 ? 0 : maxY - minY,
   }
+}
+
+/**
+ * Pick equally-spaced points along the belt centerline (chords) at intervals
+ * of ~targetSpacingMm. Excludes the very entry/exit unless they snap exactly.
+ * Used for leg placement.
+ */
+export function sampleCenterline(
+  geo: ChainGeometry,
+  targetSpacingMm: number,
+): Array<{ pos: Pt; heading: number }> {
+  if (geo.links.length === 0 || geo.pathLengthMm === 0) return []
+  const total = geo.pathLengthMm
+  const count = Math.max(2, Math.round(total / targetSpacingMm))
+  const out: Array<{ pos: Pt; heading: number }> = []
+  for (let i = 0; i < count + 1; i++) {
+    const targetDist = (total / count) * i
+    let acc = 0
+    for (const link of geo.links) {
+      const next = acc + link.length
+      if (targetDist <= next || link === geo.links[geo.links.length - 1]) {
+        const u = (targetDist - acc) / link.length
+        const cr = (link.chordHeading * Math.PI) / 180
+        out.push({
+          pos: {
+            x: link.centerEntry.x + u * link.length * Math.cos(cr),
+            y: link.centerEntry.y + u * link.length * Math.sin(cr),
+          },
+          heading: link.chordHeading,
+        })
+        break
+      }
+      acc = next
+    }
+  }
+  return out
 }
