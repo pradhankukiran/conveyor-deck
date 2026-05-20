@@ -32,20 +32,14 @@ type Props = {
 export function AutoLegs({ geo }: Props) {
   if (geo.links.length === 0 || !geo.bounds) return null
 
-  const widthAt = (sampleIdx: number, n: number): number => {
-    // Lookup the link at the sample distance — use first link width as a proxy.
-    void sampleIdx
-    void n
-    return geo.links[0]?.width ?? 600
-  }
-
   const samples = sampleCenterline(geo, LEG_SPACING_MM)
   if (samples.length === 0) return null
 
-  // Compute the per-sample "below-rail" attach point (where the leg connects
-  // to the belt frame). Leg drops straight down (screen +y) from there to
-  // a single floor level shared across the conveyor.
-  const W = widthAt(0, samples.length)
+  // Use first link's width as the belt width (all links match conveyor width here)
+  const W = geo.links[0]?.width ?? 600
+
+  // Per-sample "below-rail" attach point on the belt frame. Leg drops
+  // straight down (screen +y) from there to the floor level.
   const tops = samples.map((s) =>
     add(s.pos, perpBelow(s.heading, W / 2 - 4)),
   )

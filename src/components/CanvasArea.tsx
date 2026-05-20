@@ -5,6 +5,7 @@ import { useStore } from '../lib/store'
 import { ModuleShape } from '../modules/ModuleShape'
 import { AutoLegs } from '../modules/AutoLegs'
 import { computeChainGeometry } from '../lib/chainGeometry'
+import { redo, undo } from '../lib/history'
 import { setStageHandle } from '../lib/stageHandle'
 import { fitBoundsToViewport } from '../lib/bounds'
 
@@ -99,6 +100,22 @@ export function CanvasArea() {
       )
     }
     const onKeyDown = (e: KeyboardEvent) => {
+      const meta = e.ctrlKey || e.metaKey
+      if (meta && (e.key === 'z' || e.key === 'Z')) {
+        if (e.shiftKey) {
+          e.preventDefault()
+          redo()
+        } else {
+          e.preventDefault()
+          undo()
+        }
+        return
+      }
+      if (meta && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault()
+        redo()
+        return
+      }
       if (isEditable(e.target)) return
       if (e.code === 'Space' && !e.repeat) {
         e.preventDefault()

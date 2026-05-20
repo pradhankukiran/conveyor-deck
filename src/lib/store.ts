@@ -27,6 +27,7 @@ type StoreState = {
   drawing: DrawingMeta
   view: ViewState
   viewResetToken: number
+  toast: { message: string; id: number } | null
 
   setConveyorWidth: (mm: number) => void
 
@@ -48,6 +49,8 @@ type StoreState = {
 
   setView: (v: Partial<ViewState>) => void
   requestViewReset: () => void
+  pushToast: (message: string) => void
+  dismissToast: () => void
   clear: () => void
   replaceState: (s: Partial<Pick<StoreState, 'links' | 'drawing' | 'conveyorWidth'>>) => void
 }
@@ -151,13 +154,17 @@ export const useStore = create<StoreState>()(
   drawing: initialDrawing,
   view: { x: 0, y: 0, scale: 1 },
   viewResetToken: 0,
+  toast: null,
 
   setConveyorWidth: (mm) => set({ conveyorWidth: mm }),
 
   addLink: (kind) => {
     const links = get().links
     const result = canInsertAt(links, kind, links.length)
-    if (!result.ok) return null
+    if (!result.ok) {
+      get().pushToast(result.reason ?? 'Cannot add this link here')
+      return null
+    }
     const def = MODULES[kind]
     const variant: LinkVariant =
       def.role === 'angle' ? 'incline-up' : 'horizontal'
@@ -172,7 +179,10 @@ export const useStore = create<StoreState>()(
   insertLink: (kind, index) => {
     const links = get().links
     const result = canInsertAt(links, kind, index)
-    if (!result.ok) return null
+    if (!result.ok) {
+      get().pushToast(result.reason ?? 'Cannot insert here')
+      return null
+    }
     const def = MODULES[kind]
     const variant: LinkVariant =
       def.role === 'angle' ? 'incline-up' : 'horizontal'
@@ -199,19 +209,22 @@ export const useStore = create<StoreState>()(
       }
     }),
 
-  moveLink: (id, toIndex) =>
-    set((s) => {
-      const from = s.links.findIndex((l) => l.id === id)
-      if (from === -1) return s
-      const next = [...s.links]
-      const [link] = next.splice(from, 1)
-      if (!link) return s
-      const clamped = Math.max(0, Math.min(toIndex, next.length))
-      next.splice(clamped, 0, link)
-      const validation = validateChain(next)
-      if (!validation.ok) return s
-      return { links: next }
-    }),
+  moveLink: (id, toIndex) => {
+    const current = get()
+    const from = current.links.findIndex((l) => l.id === id)
+    if (from === -1) return
+    const next = [...current.links]
+    const [link] = next.splice(from, 1)
+    if (!link) return
+    const clamped = Math.max(0, Math.min(toIndex, next.length))
+    next.splice(clamped, 0, link)
+    const validation = validateChain(next)
+    if (!validation.ok) {
+      current.pushToast(validation.reason ?? 'Invalid chain order')
+      return
+    }
+    set({ links: next })
+  },
 
   setLinkVariant: (id, variant) =>
     set((s) => ({
@@ -226,6 +239,10 @@ export const useStore = create<StoreState>()(
   setView: (v) => set((s) => ({ view: { ...s.view, ...v } })),
   requestViewReset: () =>
     set((s) => ({ viewResetToken: s.viewResetToken + 1 })),
+
+  pushToast: (message) =>
+    set({ toast: { message, id: Date.now() + Math.random() } }),
+  dismissToast: () => set({ toast: null }),
 
   clear: () => set({ links: [], selectedLinkId: null }),
 
@@ -247,6 +264,8 @@ export const useStore = create<StoreState>()(
         links: s.links,
         drawing: s.drawing,
       }),
+      // Toast field is transient, not persisted
+      // (already excluded by partialize)
       onRehydrateStorage: () => (state) => {
         if (state?.links) bumpIdCounterFor(state.links)
       },
